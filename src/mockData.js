@@ -4,9 +4,9 @@ export const symbols = [
   { name: 'BTCUSDT', desc: 'Bitcoin / U.S. Dollar Tether', price: 68250, change: 2.45, category: 'Crypto' },
   { name: 'ETHUSDT', desc: 'Ethereum / U.S. Dollar Tether', price: 3820, change: -1.22, category: 'Crypto' },
   { name: 'SOLUSDT', desc: 'Solana / U.S. Dollar Tether', price: 145.8, change: 5.67, category: 'Crypto' },
-  { name: 'AAPL', desc: 'Apple Inc.', price: 192.5, change: 0.85, category: 'Stock' },
-  { name: 'TSLA', desc: 'Tesla Inc.', price: 178.4, change: -3.42, category: 'Stock' },
-  { name: 'NVDA', desc: 'NVIDIA Corporation', price: 875.5, change: 6.12, category: 'Stock' },
+  { name: 'AAPL', desc: 'Apple Inc.', price: 210.0, change: 0.85, category: 'Stock' },
+  { name: 'TSLA', desc: 'Tesla Inc.', price: 180.0, change: -3.42, category: 'Stock' },
+  { name: 'NVDA', desc: 'NVIDIA Corporation', price: 130.0, change: 6.12, category: 'Stock' },
   { name: 'MSFT', desc: 'Microsoft Corporation', price: 425.2, change: 0.15, category: 'Stock' },
 ];
 

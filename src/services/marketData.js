@@ -5,18 +5,26 @@ import { fetchBinanceKlines, isCryptoSymbol, mapTimeframeToInterval } from '../b
 
 /**
  * Helper to fetch API requests through a CORS proxy.
- * Tries corsproxy.io first, and falls back to allorigins if needed.
+ * Tries corsproxy.io -> api.allorigins.win -> api.codetabs.com
  */
 const fetchWithProxy = async (targetUrl) => {
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
     const res = await fetch(proxyUrl);
-    if (!res.ok) throw new Error("CORS Proxy error");
+    if (!res.ok) throw new Error("Primary CORS Proxy error");
     return res;
   } catch (e) {
-    console.warn("Primary CORS proxy failed, trying fallback proxy...", e);
-    const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-    return fetch(fallbackUrl);
+    console.warn("Primary CORS proxy (corsproxy.io) failed, trying allorigins fallback...");
+    try {
+      const fallbackUrl1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+      const res = await fetch(fallbackUrl1);
+      if (!res.ok) throw new Error("Secondary CORS Proxy error");
+      return res;
+    } catch (err) {
+      console.warn("Secondary CORS proxy (allorigins) failed, trying codetabs fallback...");
+      const fallbackUrl2 = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
+      return fetch(fallbackUrl2);
+    }
   }
 };
 
@@ -99,60 +107,59 @@ export const fetchHistoricalKlines = async (symbol, timeframe) => {
 
 /**
  * Fetches real-time quotes for all symbols in the watchlist.
- * Stocks: Yahoo Finance API Quote Endpoint (via CORS Proxy)
- * Cryptos: Local mock price or Binance API
+ * Stocks: Yahoo Finance API v8 Chart Endpoint (via CORS Proxy)
+ * Cryptos: Binance API Ticker Endpoint (Direct call)
  */
 export const fetchWatchlistQuotes = async (symbolsList) => {
-  // Extract stock symbols for Yahoo Quote Query
-  const stocks = symbolsList.filter(s => !isCryptoSymbol(s.name));
-  const cryptos = symbolsList.filter(s => isCryptoSymbol(s.name));
-
-  let quotesMap = {};
-
-  if (stocks.length > 0) {
-    const symbolsString = stocks.map(s => s.name).join(',');
-    const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbolsString}`;
-    
-    try {
-      const res = await fetchWithProxy(targetUrl);
-      if (res.ok) {
-        const data = await res.json();
-        const results = data.quoteResponse?.result || [];
-        results.forEach((q) => {
-          quotesMap[q.symbol.toUpperCase()] = {
-            price: q.regularMarketPrice,
-            change: q.regularMarketChangePercent,
-          };
-        });
-      }
-    } catch (e) {
-      console.warn("Yahoo quote fetch failed for watchlist, falling back.", e);
-    }
-  }
-
-  // Map quotes list
-  return symbolsList.map((item) => {
+  const updatedPromises = symbolsList.map(async (item) => {
     const isCrypto = isCryptoSymbol(item.name);
-    
-    if (!isCrypto) {
-      const liveQuote = quotesMap[item.name.toUpperCase()];
-      if (liveQuote && liveQuote.price !== undefined) {
-        return {
-          ...item,
-          price: liveQuote.price,
-          change: liveQuote.change || 0,
-        };
+
+    if (isCrypto) {
+      // Fetch crypto quotes directly from Binance ticker endpoint
+      try {
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${item.name.toUpperCase()}`);
+        if (res.ok) {
+          const data = await res.json();
+          return {
+            ...item,
+            price: parseFloat(data.lastPrice),
+            change: parseFloat(data.priceChangePercent),
+          };
+        }
+      } catch (e) {
+        console.warn(`Binance quote fetch failed for symbol ${item.name}:`, e);
       }
+      return item;
+    } else {
+      // Fetch stock quotes from Yahoo v8 Chart Endpoint via CORS proxies
+      const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${item.name}?interval=1d&range=1d`;
+      try {
+        const res = await fetchWithProxy(targetUrl);
+        if (res.ok) {
+          const json = await res.json();
+          const chartResult = json.chart?.result?.[0];
+          if (chartResult && chartResult.meta) {
+            const regularMarketPrice = chartResult.meta.regularMarketPrice;
+            const chartPreviousClose = chartResult.meta.chartPreviousClose;
+            
+            if (regularMarketPrice !== undefined && chartPreviousClose !== undefined) {
+              const changePercent = ((regularMarketPrice - chartPreviousClose) / chartPreviousClose) * 100;
+              return {
+                ...item,
+                price: regularMarketPrice,
+                change: parseFloat(changePercent.toFixed(2)),
+              };
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`Yahoo v8 quote fetch failed for symbol ${item.name}:`, e);
+      }
+      return item;
     }
-    
-    // Fallback: Slight random tick fluctuations for cryptos or failed stocks
-    const changeFactor = 1 + (Math.random() - 0.5) * 0.0006;
-    const newPrice = item.price * changeFactor;
-    return {
-      ...item,
-      price: parseFloat(newPrice.toFixed(2)),
-    };
   });
+
+  return Promise.all(updatedPromises);
 };
 
 /**
@@ -195,21 +202,20 @@ export const subscribeToRealtime = (symbol, timeframe, onTick) => {
     // Stocks: 10s Polling + 2s Micro-tick Simulator
     const intervalSec = timeframe === '1m' ? 60 : timeframe === '5m' ? 300 : timeframe === '1h' ? 3600 : 86400;
     
-    // Find initial price from mockData symbols list
-    const asset = symbols.find(s => s.name.toUpperCase() === symbol.toUpperCase());
-    let currentPrice = asset ? asset.price : 150.0;
+    // Initialize currentPrice to null. Remove mockData dependency to prevent price jumping.
+    let currentPrice = null;
     let currentVolume = 10000;
 
     const fetchQuote = async () => {
-      const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+      const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
       try {
         const res = await fetchWithProxy(targetUrl);
         if (res.ok) {
           const json = await res.json();
-          const result = json.quoteResponse?.result?.[0];
-          if (result && result.regularMarketPrice) {
-            currentPrice = result.regularMarketPrice;
-            currentVolume = result.regularMarketVolume || currentVolume;
+          const chartResult = json.chart?.result?.[0];
+          if (chartResult && chartResult.meta && chartResult.meta.regularMarketPrice) {
+            currentPrice = chartResult.meta.regularMarketPrice;
+            currentVolume = chartResult.meta.regularMarketVolume || currentVolume;
           }
         }
       } catch (e) {
@@ -217,7 +223,7 @@ export const subscribeToRealtime = (symbol, timeframe, onTick) => {
       }
     };
 
-    // Trigger initial poll
+    // Trigger initial poll immediately
     fetchQuote();
 
     // 10s interval poll to fetch true price
@@ -225,6 +231,9 @@ export const subscribeToRealtime = (symbol, timeframe, onTick) => {
 
     // 2s interval micro-tick simulator to animate chart
     const tickTimer = setInterval(() => {
+      // Guard: If the real price has not been fetched yet, do not send any ticks
+      if (currentPrice === null) return;
+
       const now = Math.floor(Date.now() / 1000);
       const currentTime = now - (now % intervalSec);
       

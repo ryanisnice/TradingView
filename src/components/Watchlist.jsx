@@ -6,7 +6,7 @@ import { Plus, Search, ChevronDown, TrendingUp, TrendingDown } from 'lucide-reac
 export default function Watchlist({ currentSymbol, onSelectSymbol }) {
   const [watchlist, setWatchlist] = useState(symbols);
 
-  // Fetch initial quotes on mount
+  // Poll real watchlist quotes from API
   useEffect(() => {
     let isMounted = true;
 
@@ -21,37 +21,21 @@ export default function Watchlist({ currentSymbol, onSelectSymbol }) {
       }
     };
 
+    // Load initial quotes on mount
     loadQuotes();
 
-    // Setup local micro-tick price simulator to make prices update in real-time in the UI
-    const timer = setInterval(() => {
-      if (!isMounted) return;
-      
-      setWatchlist((prevList) =>
-        prevList.map((item) => {
-          // Add a tiny random price tick (0.01% - 0.03% max) to make it feel alive
-          const isUp = Math.random() > 0.49;
-          const pct = (Math.random() * 0.0003) + 0.0001;
-          const diff = item.price * pct * (isUp ? 1 : -1);
-          const newPrice = parseFloat((item.price + diff).toFixed(2));
-          
-          return {
-            ...item,
-            price: newPrice,
-          };
-        })
-      );
-    }, 3000);
+    // Poll actual market quotes every 10 seconds
+    const pollTimer = setInterval(loadQuotes, 10000);
 
     return () => {
       isMounted = false;
-      clearInterval(timer);
+      clearInterval(pollTimer);
     };
   }, []);
 
   const activeSymbolInfo = watchlist.find((s) => s.name === currentSymbol) || watchlist[0] || symbols[0];
   
-  // Calculate mock day high/low based on current dynamic price
+  // Calculate day high/low bounds based on dynamic price
   const activePrice = activeSymbolInfo.price;
   const dayLow = activePrice * 0.985;
   const dayHigh = activePrice * 1.015;
