@@ -41,8 +41,9 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   const chartContainerRef = useRef(null);
   const hoveredTimeRef = useRef(null);
   
-  // O(1) sliding window sum tracker
-  const smaSumRef = useRef(0);
+  // O(1) sliding window sum trackers for MA5 and MA10
+  const sma5SumRef = useRef(0);
+  const sma10SumRef = useRef(0);
 
   // References to communicate with click & keydown handler closures
   const activeToolRef = useRef(activeTool);
@@ -60,6 +61,9 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Filter trendlines for the active symbol
+  const activeTrendlines = trendlines[symbol] || [];
+
   // Keep refs up-to-date with React states to avoid closure stale-value bugs
   useEffect(() => {
     activeToolRef.current = activeTool;
@@ -69,7 +73,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
     drawingPointRef.current = drawingPoint;
   }, [drawingPoint]);
 
-  // Effect to draw trendlines dynamically without recreating the entire chart
+  // Effect to draw symbol-bound trendlines dynamically without recreating the chart
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -84,8 +88,8 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
     });
     trendlineSeriesListRef.current = [];
 
-    // Redraw all completed trendlines
-    trendlines.forEach((line) => {
+    // Redraw completed trendlines for current symbol
+    activeTrendlines.forEach((line) => {
       const series = chart.addSeries(LineSeries, {
         color: '#29b6f6', // Light Blue for Trendlines
         lineWidth: 2,
@@ -98,7 +102,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
       ]);
       trendlineSeriesListRef.current.push(series);
     });
-  }, [trendlines]);
+  }, [trendlines, symbol]);
 
   // Main K-line and live updates effect
   useEffect(() => {
@@ -131,31 +135,45 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
 
         setLoading(false);
 
-        // Calculate SMA(20) historical data
-        const smaData = calculateSMA(candleData, 20);
+        // Calculate double SMA historical data (MA5 & MA10)
+        const sma5Data = calculateSMA(candleData, 5);
+        const sma10Data = calculateSMA(candleData, 10);
 
-        // Initialize O(1) sliding window sum to the sum of the last 20 elements
-        if (candleData.length >= 20) {
+        // Initialize O(1) sliding window sum5
+        if (candleData.length >= 5) {
           let sum = 0;
-          for (let j = candleData.length - 20; j < candleData.length; j++) {
+          for (let j = candleData.length - 5; j < candleData.length; j++) {
             sum += candleData[j].close;
           }
-          smaSumRef.current = sum;
+          sma5SumRef.current = sum;
         } else {
-          smaSumRef.current = 0;
+          sma5SumRef.current = 0;
+        }
+
+        // Initialize O(1) sliding window sum10
+        if (candleData.length >= 10) {
+          let sum = 0;
+          for (let j = candleData.length - 10; j < candleData.length; j++) {
+            sum += candleData[j].close;
+          }
+          sma10SumRef.current = sum;
+        } else {
+          sma10SumRef.current = 0;
         }
 
         // Prepopulate HUD with last data point
         const lastData = candleData[candleData.length - 1];
         const lastVol = volData[volData.length - 1];
-        const lastSma = smaData[smaData.length - 1];
+        const lastSma5 = sma5Data[sma5Data.length - 1];
+        const lastSma10 = sma10Data[sma10Data.length - 1];
         setHudData({
           open: lastData.open,
           high: lastData.high,
           low: lastData.low,
           close: lastData.close,
           volume: lastVol ? lastVol.value : 0,
-          ma20: lastSma ? lastSma.value : null,
+          ma5: lastSma5 ? lastSma5.value : null,
+          ma10: lastSma10 ? lastSma10.value : null,
           isUp: lastData.close >= lastData.open,
         });
 
@@ -170,6 +188,11 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             vertLines: { color: '#1c2030' },
             horzLines: { color: '#1c2030' },
           },
+          leftPriceScale: {
+            visible: true,
+            borderColor: '#2a2e39',
+            textColor: '#787b86',
+          },
           rightPriceScale: {
             borderColor: '#2a2e39',
             textColor: '#d1d4dc',
@@ -183,13 +206,13 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             vertLine: {
               color: '#787b86',
               width: 1,
-              style: 3, // dashed
+              style: 3,
               labelBackgroundColor: '#2a2e39',
             },
             horzLine: {
               color: '#787b86',
               width: 1,
-              style: 3, // dashed
+              style: 3,
               labelBackgroundColor: '#2a2e39',
             },
           },
@@ -205,7 +228,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
 
         chartRef.current = chart;
 
-        // Add main series (using lightweight-charts v5 unified API)
+        // Add main series
         let mainSeries;
         if (activeChartType === 'candle') {
           mainSeries = chart.addSeries(CandlestickSeries, {
@@ -224,21 +247,30 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           mainSeries.setData(candleData.map(d => ({ time: d.time, value: d.close })));
         }
 
-        // Add SMA(20) Indicator Line (using lightweight-charts v5 unified API)
-        const maSeries = chart.addSeries(LineSeries, {
-          color: '#F6C343', // Bright yellow
+        // Add MA5 Indicator Line (Blue)
+        const ma5Series = chart.addSeries(LineSeries, {
+          color: '#2962FF', // Blue
           lineWidth: 1.5,
           priceLineVisible: false,
           lastValueVisible: true,
         });
-        maSeries.setData(smaData);
+        ma5Series.setData(sma5Data);
 
-        // Add volume series (using lightweight-charts v5 unified API)
+        // Add MA10 Indicator Line (Orange)
+        const ma10Series = chart.addSeries(LineSeries, {
+          color: '#FF6D00', // Orange
+          lineWidth: 1.5,
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+        ma10Series.setData(sma10Data);
+
+        // Add volume series
         const volumeSeries = chart.addSeries(HistogramSeries, {
           priceFormat: {
             type: 'volume',
           },
-          priceScaleId: '', // Overlay series
+          priceScaleId: 'left',
         });
         volumeSeries.setData(volData);
         volumeSeries.priceScale().applyOptions({
@@ -248,9 +280,9 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           },
         });
 
-        // Draw already existing trendlines on new chart creation
+        // Draw already existing trendlines for current symbol on startup
         trendlineSeriesListRef.current = [];
-        trendlines.forEach((line) => {
+        activeTrendlines.forEach((line) => {
           const series = chart.addSeries(LineSeries, {
             color: '#29b6f6',
             lineWidth: 2,
@@ -277,15 +309,16 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             const currentDrawingPoint = drawingPointRef.current;
 
             if (!currentDrawingPoint) {
-              // Clicked first point: Save start point coordinate
               setDrawingPoint({ time, price });
             } else {
-              // Clicked second point: Package trendline, reset, restore cursor
               const endPoint = { time, price };
-              setTrendlines((prev) => [
-                ...prev,
-                { start: currentDrawingPoint, end: endPoint },
-              ]);
+              setTrendlines((prev) => {
+                const currentList = prev[symbol] || [];
+                return {
+                  ...prev,
+                  [symbol]: [...currentList, { start: currentDrawingPoint, end: endPoint }],
+                };
+              });
               setDrawingPoint(null);
               setActiveTool('cursor');
             }
@@ -310,7 +343,8 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             hoveredTimeRef.current = param.time;
             const candleVal = param.seriesData.get(mainSeries);
             const volVal = param.seriesData.get(volumeSeries);
-            const maVal = param.seriesData.get(maSeries);
+            const ma5Val = param.seriesData.get(ma5Series);
+            const ma10Val = param.seriesData.get(ma10Series);
             
             if (candleVal) {
               const oVal = candleVal.open !== undefined ? candleVal.open : candleVal.value;
@@ -321,7 +355,8 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
                 low: candleVal.low !== undefined ? candleVal.low : candleVal.value,
                 close: cVal,
                 volume: volVal ? volVal.value : 0,
-                ma20: maVal ? maVal.value : null,
+                ma5: ma5Val ? ma5Val.value : null,
+                ma10: ma10Val ? ma10Val.value : null,
                 isUp: cVal >= oVal,
               });
             }
@@ -331,10 +366,14 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             const activeLast = candleData[candleData.length - 1];
             const activeVol = volData[volData.length - 1];
             
-            // Fetch live SMA value from memory
-            let currentLastSma = null;
-            if (candleData.length >= 20) {
-              currentLastSma = smaSumRef.current / 20;
+            // Fetch live SMA values from memory
+            let currentLastSma5 = null;
+            if (candleData.length >= 5) {
+              currentLastSma5 = sma5SumRef.current / 5;
+            }
+            let currentLastSma10 = null;
+            if (candleData.length >= 10) {
+              currentLastSma10 = sma10SumRef.current / 10;
             }
             
             setHudData({
@@ -343,7 +382,8 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
               low: activeLast.low,
               close: activeLast.close,
               volume: activeVol ? activeVol.value : 0,
-              ma20: currentLastSma ? parseFloat(currentLastSma.toFixed(2)) : null,
+              ma5: currentLastSma5 ? parseFloat(currentLastSma5.toFixed(2)) : null,
+              ma10: currentLastSma10 ? parseFloat(currentLastSma10.toFixed(2)) : null,
               isUp: activeLast.close >= activeLast.open,
             });
           }
@@ -381,11 +421,46 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             o = lastCandle.open;
             h = tick.h !== undefined ? tick.h : Math.max(lastCandle.high, c);
             l = tick.l !== undefined ? tick.l : Math.min(lastCandle.low, c);
+            
+            const oldClose = lastCandle.close;
+            lastCandle.open = o;
+            lastCandle.high = h;
+            lastCandle.low = l;
+            lastCandle.close = c;
+
+            // Incremental O(1) sum adjustments
+            if (candleData.length >= 5) {
+              sma5SumRef.current = sma5SumRef.current - oldClose + c;
+            }
+            if (candleData.length >= 10) {
+              sma10SumRef.current = sma10SumRef.current - oldClose + c;
+            }
           } else if (lastCandle) {
             // Creating new tick candle
             o = lastCandle.close; // start open price at previous close price
             h = Math.max(o, c);
             l = Math.min(o, c);
+
+            candleData.push({ time: t, open: o, high: h, low: l, close: c });
+
+            // Incremental O(1) sum adjustments with window slide
+            if (candleData.length > 5) {
+              const oldest5 = candleData[candleData.length - 6];
+              sma5SumRef.current = sma5SumRef.current - oldest5.close + c;
+            } else if (candleData.length === 5) {
+              let sum = 0;
+              for (let j = 0; j < 5; j++) sum += candleData[j].close;
+              sma5SumRef.current = sum;
+            }
+
+            if (candleData.length > 10) {
+              const oldest10 = candleData[candleData.length - 11];
+              sma10SumRef.current = sma10SumRef.current - oldest10.close + c;
+            } else if (candleData.length === 10) {
+              let sum = 0;
+              for (let j = 0; j < 10; j++) sum += candleData[j].close;
+              sma10SumRef.current = sum;
+            }
           }
 
           const isUp = c >= o;
@@ -403,49 +478,17 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             color: isUp ? '#26a69a' : '#ef5350',
           });
 
-          // Dynamic O(1) recalculation of SMA sum
-          let liveSma = null;
-          if (candleData.length >= 20) {
-            if (t === lastCandle.time) {
-              // Case A: Updating the current active K-line
-              smaSumRef.current = smaSumRef.current - lastCandle.close + c;
-              
-              // Modify the in-memory last candle
-              lastCandle.open = o;
-              lastCandle.high = h;
-              lastCandle.low = l;
-              lastCandle.close = c;
-            } else {
-              // Case B: Initiating a new K-line. Slide window
-              const oldestCandle = candleData[candleData.length - 20];
-              smaSumRef.current = smaSumRef.current - oldestCandle.close + c;
-              
-              // Push new K-line to array
-              candleData.push({ time: t, open: o, high: h, low: l, close: c });
-            }
-            liveSma = smaSumRef.current / 20;
-            maSeries.update({ time: t, value: parseFloat(liveSma.toFixed(2)) });
-          } else {
-            // Not enough data (less than 20 items)
-            if (lastCandle && t === lastCandle.time) {
-              lastCandle.open = o;
-              lastCandle.high = h;
-              lastCandle.low = l;
-              lastCandle.close = c;
-            } else {
-              candleData.push({ time: t, open: o, high: h, low: l, close: c });
-            }
+          // Calculate live SMA values
+          let liveSma5 = null;
+          if (candleData.length >= 5) {
+            liveSma5 = sma5SumRef.current / 5;
+            ma5Series.update({ time: t, value: parseFloat(liveSma5.toFixed(2)) });
+          }
 
-            // If this tick makes it reach exactly 20 elements, calculate initial sum
-            if (candleData.length === 20) {
-              let sum = 0;
-              for (let j = 0; j < 20; j++) {
-                sum += candleData[j].close;
-              }
-              smaSumRef.current = sum;
-              liveSma = sum / 20;
-              maSeries.update({ time: t, value: parseFloat(liveSma.toFixed(2)) });
-            }
+          let liveSma10 = null;
+          if (candleData.length >= 10) {
+            liveSma10 = sma10SumRef.current / 10;
+            ma10Series.update({ time: t, value: parseFloat(liveSma10.toFixed(2)) });
           }
 
           // Update volume reference list
@@ -465,7 +508,8 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
               low: l,
               close: c,
               volume: v,
-              ma20: liveSma ? parseFloat(liveSma.toFixed(2)) : null,
+              ma5: liveSma5 ? parseFloat(liveSma5.toFixed(2)) : null,
+              ma10: liveSma10 ? parseFloat(liveSma10.toFixed(2)) : null,
               isUp,
             });
           }
@@ -583,11 +627,21 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
                 {hudData.volume?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </span>
             </div>
-            {hudData.ma20 !== null && hudData.ma20 !== undefined && (
+            
+            {/* Double SMAs Display */}
+            {hudData.ma5 !== null && hudData.ma5 !== undefined && (
               <div className="flex space-x-1">
-                <span className="text-tradingview-textSecondary">MA(20)</span>
-                <span className="text-[#F6C343] font-bold">
-                  {hudData.ma20.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                <span className="text-tradingview-textSecondary">MA(5)</span>
+                <span className="text-[#2962FF] font-bold">
+                  {hudData.ma5.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+            {hudData.ma10 !== null && hudData.ma10 !== undefined && (
+              <div className="flex space-x-1">
+                <span className="text-tradingview-textSecondary">MA(10)</span>
+                <span className="text-[#FF6D00] font-bold">
+                  {hudData.ma10.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
             )}

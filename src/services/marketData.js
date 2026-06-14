@@ -142,12 +142,16 @@ export const fetchWatchlistQuotes = async (symbolsList) => {
             const regularMarketPrice = chartResult.meta.regularMarketPrice;
             const chartPreviousClose = chartResult.meta.chartPreviousClose;
             
+            // Extract shortName or longName from Yahoo chart meta to resolve corporate names
+            const companyName = chartResult.meta.shortName || chartResult.meta.longName || item.desc;
+            
             if (regularMarketPrice !== undefined && chartPreviousClose !== undefined) {
               const changePercent = ((regularMarketPrice - chartPreviousClose) / chartPreviousClose) * 100;
               return {
                 ...item,
                 price: regularMarketPrice,
                 change: parseFloat(changePercent.toFixed(2)),
+                desc: companyName, // Assign resolved real corporate name
               };
             }
           }

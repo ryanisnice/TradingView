@@ -8,10 +8,15 @@ function App() {
   const [currentSymbol, setCurrentSymbol] = useState('BTCUSDT');
   const [currentTimeframe, setCurrentTimeframe] = useState('1D');
   const [activeTool, setActiveTool] = useState('cursor');
-  const [trendlines, setTrendlines] = useState([]);
+  
+  // Restructure trendlines as a dictionary mapped by symbol key
+  const [trendlines, setTrendlines] = useState({});
 
   const clearAllDrawings = () => {
-    setTrendlines([]);
+    setTrendlines((prev) => ({
+      ...prev,
+      [currentSymbol]: [],
+    }));
   };
 
   return (

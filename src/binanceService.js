@@ -67,6 +67,6 @@ export const fetchBinanceKlines = async (symbol, interval, limit = 200) => {
  * @returns {boolean}
  */
 export const isCryptoSymbol = (symbol) => {
-  const cryptoSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
-  return cryptoSymbols.includes(symbol.toUpperCase());
+  const clean = symbol.toUpperCase();
+  return clean.endsWith('USDT') || clean.includes('/') || clean.endsWith('BTC');
 };
