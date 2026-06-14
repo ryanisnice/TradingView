@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  --color-tradingview-bg: #131722;
+  --color-tradingview-card: #1c2030;
+  --color-tradingview-border: #2a2e39;
+  --color-tradingview-up: #26a69a;
+  --color-tradingview-down: #ef5350;
+  --color-tradingview-textPrimary: #d1d4dc;
+  --color-tradingview-textSecondary: #787b86;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #131722;
+  color: #d1d4dc;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+  overflow: hidden;
+}
+
+/* Custom scrollbar matching TradingView */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1c2030;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2e39;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #363a45;
+}
+
+/* General transitions */
+.transition-tv {
+  transition: all 0.2s ease-in-out;
+}
