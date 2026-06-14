@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
   Cloud,
@@ -7,11 +7,69 @@ import {
   Settings,
   ChevronDown,
   LineChart,
-  Search
+  Search,
+  List
 } from 'lucide-react';
+import { fetchWatchlistQuotes } from '../services/marketData';
+import { isCryptoSymbol } from '../binanceService';
 
-export default function Topbar({ currentSymbol, currentTimeframe, onSelectTimeframe }) {
+export default function Topbar({ 
+  currentSymbol, 
+  currentTimeframe, 
+  onSelectTimeframe, 
+  onSelectSymbol,
+  showMobileWatchlist,
+  setShowMobileWatchlist
+}) {
   const timeframes = ['1m', '5m', '1h', '1D'];
+  const [isEditing, setIsEditing] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [isValidating, setIsValidating] = useState(false);
+
+  const handleSearchSubmit = async (e) => {
+    if (e.key === 'Enter') {
+      const trimmed = searchInput.trim().toUpperCase();
+      if (!trimmed) {
+        setIsEditing(false);
+        return;
+      }
+
+      setIsValidating(true);
+      const isCrypto = isCryptoSymbol(trimmed);
+      const tempItem = {
+        name: trimmed,
+        desc: isCrypto ? `${trimmed.replace('USDT', '')} / U.S. Dollar Tether` : `${trimmed} Stock`,
+        price: 0,
+        change: 0,
+        category: isCrypto ? 'Crypto' : 'Stock',
+      };
+
+      try {
+        const validatedQuotes = await fetchWatchlistQuotes([tempItem]);
+        const validatedItem = validatedQuotes[0];
+
+        if (validatedItem && validatedItem.price > 0) {
+          onSelectSymbol(validatedItem);
+          setIsEditing(false);
+        } else {
+          alert("查無此商品或代號錯誤");
+        }
+      } catch (err) {
+        console.error("Search validation error:", err);
+        alert("查無此商品或代號錯誤");
+      } finally {
+        setIsValidating(false);
+      }
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+    }
+  };
+
+  const handleBlur = () => {
+    if (!isValidating) {
+      setIsEditing(false);
+    }
+  };
 
   return (
     <div className="h-[48px] w-full flex items-center justify-between bg-tradingview-card border-b border-tradingview-border px-4 text-tradingview-textSecondary select-none">
@@ -29,14 +87,42 @@ export default function Topbar({ currentSymbol, currentTimeframe, onSelectTimefr
 
         <div className="w-px h-5 bg-tradingview-border" />
 
-        {/* Symbol Search Display */}
-        <div className="flex items-center space-x-1 bg-tradingview-bg hover:bg-tradingview-border/40 border border-tradingview-border px-2.5 py-1 rounded cursor-pointer transition-tv">
-          <Search size={13} className="text-tradingview-textSecondary" />
-          <span className="text-xs font-bold text-tradingview-textPrimary px-1">
-            {currentSymbol}
-          </span>
-          <ChevronDown size={12} className="text-tradingview-textSecondary" />
-        </div>
+        {/* Symbol Search Display / Input */}
+        {isEditing ? (
+          <div className="relative flex items-center bg-tradingview-bg border border-tradingview-up px-2.5 py-1 rounded">
+            <Search size={13} className="text-tradingview-up mr-1 flex-shrink-0" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={handleSearchSubmit}
+              onBlur={handleBlur}
+              disabled={isValidating}
+              placeholder="搜尋代碼..."
+              className="bg-transparent text-xs font-bold text-tradingview-textPrimary outline-none w-[100px] disabled:opacity-50"
+              autoFocus
+            />
+            {isValidating && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                <div className="w-3 h-3 border-2 border-tradingview-up/30 border-t-tradingview-up rounded-full animate-spin"></div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div 
+            onClick={() => {
+              setSearchInput('');
+              setIsEditing(true);
+            }}
+            className="flex items-center space-x-1 bg-tradingview-bg hover:bg-tradingview-border/40 border border-tradingview-border px-2.5 py-1 rounded cursor-pointer transition-tv"
+          >
+            <Search size={13} className="text-tradingview-textSecondary flex-shrink-0" />
+            <span className="text-xs font-bold text-tradingview-textPrimary px-1 truncate max-w-[90px]">
+              {currentSymbol}
+            </span>
+            <ChevronDown size={12} className="text-tradingview-textSecondary flex-shrink-0" />
+          </div>
+        )}
 
         <div className="w-px h-5 bg-tradingview-border" />
 
@@ -94,12 +180,23 @@ export default function Topbar({ currentSymbol, currentTimeframe, onSelectTimefr
           <span className="text-[10px] font-semibold">已存入雲端</span>
         </div>
 
-        {/* Layout actions */}
+        {/* Layout actions & Mobile Toggle */}
         <div className="flex items-center space-x-1">
-          <button className="p-1.5 rounded hover:bg-tradingview-border text-tradingview-textSecondary hover:text-tradingview-textPrimary transition-tv">
+          {/* Mobile Watchlist Toggle Button */}
+          <button 
+            onClick={() => setShowMobileWatchlist(!showMobileWatchlist)}
+            className={`p-1.5 rounded text-tradingview-textSecondary hover:text-tradingview-textPrimary transition-tv md:hidden ${
+              showMobileWatchlist ? 'bg-tradingview-border text-tradingview-up' : ''
+            }`}
+            title={showMobileWatchlist ? '顯示圖表' : '顯示自選股'}
+          >
+            <List size={16} />
+          </button>
+
+          <button className="p-1.5 rounded hover:bg-tradingview-border text-tradingview-textSecondary hover:text-tradingview-textPrimary transition-tv hidden md:block">
             <Maximize2 size={14} />
           </button>
-          <button className="p-1.5 rounded hover:bg-tradingview-border text-tradingview-textSecondary hover:text-tradingview-textPrimary transition-tv">
+          <button className="p-1.5 rounded hover:bg-tradingview-border text-tradingview-textSecondary hover:text-tradingview-textPrimary transition-tv hidden md:block">
             <Settings size={14} />
           </button>
         </div>

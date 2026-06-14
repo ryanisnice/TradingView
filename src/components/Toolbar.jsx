@@ -15,7 +15,7 @@ import {
   Settings
 } from 'lucide-react';
 
-export default function Toolbar({ activeTool, setActiveTool, onClearDrawings }) {
+export default function Toolbar({ activeTool, setActiveTool, onClearDrawings, showMobileWatchlist }) {
   const [isLocked, setIsLocked] = useState(false);
 
   const tools = [
@@ -31,9 +31,11 @@ export default function Toolbar({ activeTool, setActiveTool, onClearDrawings }) 
   ];
 
   return (
-    <div className="w-[48px] h-full flex flex-col justify-between items-center bg-tradingview-card border-r border-tradingview-border py-2 text-tradingview-textSecondary select-none">
-      {/* Top tools list */}
-      <div className="flex flex-col space-y-1 w-full items-center">
+    <div className={`w-full md:w-[48px] h-[50px] md:h-full flex-row md:flex-col justify-between items-center bg-tradingview-card border-t md:border-t-0 md:border-r border-tradingview-border px-3 md:px-0 py-0 md:py-2 text-tradingview-textSecondary select-none overflow-x-auto md:overflow-x-visible whitespace-nowrap scrollbar-none z-20 order-last md:order-first ${
+      showMobileWatchlist ? 'hidden md:flex' : 'flex'
+    }`}>
+      {/* Top/Left tools list */}
+      <div className="flex flex-row md:flex-col space-x-1 md:space-x-0 md:space-y-1 items-center flex-shrink-0">
         {tools.map((tool) => {
           const Icon = tool.icon;
           const isActive = activeTool === tool.id;
@@ -42,7 +44,7 @@ export default function Toolbar({ activeTool, setActiveTool, onClearDrawings }) 
               key={tool.id}
               onClick={() => setActiveTool(tool.id)}
               title={tool.label}
-              className={`w-9 h-9 rounded flex items-center justify-center transition-tv relative group ${
+              className={`w-9 h-9 rounded flex items-center justify-center transition-tv relative group flex-shrink-0 ${
                 isActive
                   ? 'bg-tradingview-border text-tradingview-up'
                   : 'hover:bg-tradingview-border hover:text-tradingview-textPrimary'
@@ -52,65 +54,68 @@ export default function Toolbar({ activeTool, setActiveTool, onClearDrawings }) 
               
               {/* Active Indicator bar */}
               {isActive && (
-                <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-tradingview-up rounded-r" />
+                <>
+                  <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-tradingview-up rounded-r hidden md:block" />
+                  <div className="absolute bottom-0 left-1.5 right-1.5 h-[3px] bg-tradingview-up rounded-t md:hidden" />
+                </>
               )}
 
               {/* Tooltip */}
-              <div className="absolute left-[52px] bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
+              <div className="absolute bottom-12 left-1/2 -translate-x-1/2 md:bottom-auto md:left-[52px] md:translate-x-0 bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
                 {tool.label}
               </div>
             </button>
           );
         })}
 
-        <div className="w-6 h-px bg-tradingview-border my-2" />
+        <div className="w-px md:w-6 h-6 md:h-px bg-tradingview-border mx-1.5 md:mx-0 my-0 md:my-2 flex-shrink-0" />
 
         {/* Lock/Eye Utilities */}
         <button
           onClick={() => setIsLocked(!isLocked)}
           title={isLocked ? '解鎖全部繪圖' : '鎖定全部繪圖'}
-          className={`w-9 h-9 rounded flex items-center justify-center transition-tv relative group ${
+          className={`w-9 h-9 rounded flex items-center justify-center transition-tv relative group flex-shrink-0 ${
             isLocked
               ? 'bg-tradingview-border text-[#ff9800]'
               : 'hover:bg-tradingview-border hover:text-tradingview-textPrimary'
           }`}
         >
           <Lock size={18} />
-          <div className="absolute left-[52px] bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 md:bottom-auto md:left-[52px] md:translate-x-0 bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
             {isLocked ? '解鎖全部繪圖' : '鎖定全部繪圖'}
           </div>
         </button>
 
         <button
           title="隱藏所有繪圖"
-          className="w-9 h-9 rounded flex items-center justify-center transition-tv hover:bg-tradingview-border hover:text-tradingview-textPrimary relative group"
+          className="w-9 h-9 rounded flex items-center justify-center transition-tv hover:bg-tradingview-border hover:text-tradingview-textPrimary relative group flex-shrink-0"
         >
           <Eye size={18} />
-          <div className="absolute left-[52px] bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 md:bottom-auto md:left-[52px] md:translate-x-0 bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
             隱藏所有繪圖
           </div>
         </button>
       </div>
 
-      {/* Bottom Actions */}
-      <div className="flex flex-col space-y-1 w-full items-center">
+      {/* Bottom/Right Actions */}
+      <div className="flex flex-row md:flex-col space-x-1 md:space-x-0 md:space-y-1 items-center flex-shrink-0 ml-4 md:ml-0">
         <button
           onClick={onClearDrawings}
           title="刪除繪圖"
-          className="w-9 h-9 rounded flex items-center justify-center transition-tv hover:bg-tradingview-border hover:text-[#ef5350] relative group"
+          className="w-9 h-9 rounded flex items-center justify-center transition-tv hover:bg-tradingview-border hover:text-[#ef5350] relative group flex-shrink-0"
         >
           <Trash2 size={18} />
-          <div className="absolute left-[52px] bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 md:bottom-auto md:left-[52px] md:translate-x-0 bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
             刪除繪圖
           </div>
         </button>
 
         <button
           title="圖表設置"
-          className="w-9 h-9 rounded flex items-center justify-center transition-tv hover:bg-tradingview-border hover:text-tradingview-textPrimary relative group"
+          className="w-9 h-9 rounded flex items-center justify-center transition-tv hover:bg-tradingview-border hover:text-tradingview-textPrimary relative group flex-shrink-0"
         >
           <Settings size={18} />
-          <div className="absolute left-[52px] bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 md:bottom-auto md:left-[52px] md:translate-x-0 bg-[#2a2e39] text-[#d1d4dc] text-[10px] px-2 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
             圖表設置
           </div>
         </button>

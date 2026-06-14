@@ -4,72 +4,19 @@ import { fetchWatchlistQuotes } from '../services/marketData';
 import { isCryptoSymbol } from '../binanceService';
 import { Plus, Search, ChevronDown, TrendingUp, TrendingDown, X } from 'lucide-react';
 
-export default function Watchlist({ currentSymbol, onSelectSymbol }) {
-  // Load initial watchlists from localStorage
-  const loadSavedWatchlists = () => {
-    const saved = localStorage.getItem('tradingview_watchlists');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].items !== undefined) {
-          return parsed;
-        }
-      } catch (e) {
-        console.error("Failed to parse watchlists from localStorage:", e);
-      }
-    }
-    
-    // Check if there is an old single-array format in localStorage
-    const oldSaved = localStorage.getItem('tradingview_watchlist');
-    if (oldSaved) {
-      try {
-        const parsedOld = JSON.parse(oldSaved);
-        if (Array.isArray(parsedOld)) {
-          const defaultList = {
-            id: 'default',
-            name: '預設自選',
-            items: parsedOld
-          };
-          return [defaultList];
-        }
-      } catch (e) {
-        console.error("Failed to parse old watchlist:", e);
-      }
-    }
-    
-    // Default fallback
-    return [
-      {
-        id: 'default',
-        name: '預設自選',
-        items: symbols
-      }
-    ];
-  };
-
-  const loadActiveListId = (lists) => {
-    const savedId = localStorage.getItem('tradingview_active_list_id');
-    if (savedId && lists.some(l => l.id === savedId)) {
-      return savedId;
-    }
-    return lists[0]?.id || 'default';
-  };
-
-  const [watchlists, setWatchlists] = useState(loadSavedWatchlists);
-  const [activeListId, setActiveListId] = useState(() => loadActiveListId(watchlists));
+export default function Watchlist({ 
+  currentSymbol, 
+  onSelectSymbol,
+  watchlists,
+  setWatchlists,
+  activeListId,
+  setActiveListId,
+  showMobileWatchlist
+}) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showAddInput, setShowAddInput] = useState(false);
   const [newSymbolInput, setNewSymbolInput] = useState('');
   const [isValidating, setIsValidating] = useState(false);
-
-  // Auto-sync state changes to localStorage
-  useEffect(() => {
-    localStorage.setItem('tradingview_watchlists', JSON.stringify(watchlists));
-  }, [watchlists]);
-
-  useEffect(() => {
-    localStorage.setItem('tradingview_active_list_id', activeListId);
-  }, [activeListId]);
 
   const activeList = watchlists.find((l) => l.id === activeListId) || watchlists[0] || { id: 'default', name: '預設自選', items: [] };
   const activeListItems = activeList.items;
@@ -239,7 +186,9 @@ export default function Watchlist({ currentSymbol, onSelectSymbol }) {
   const rangePercent = 50;
 
   return (
-    <div className="w-[300px] h-full flex flex-col bg-tradingview-card border-l border-tradingview-border select-none overflow-hidden">
+    <div className={`w-full md:w-[300px] h-full flex flex-col bg-tradingview-card border-t md:border-t-0 md:border-l border-tradingview-border select-none overflow-hidden ${
+      showMobileWatchlist ? 'flex' : 'hidden md:flex'
+    }`}>
       {/* Watchlist Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-tradingview-border relative z-30">
         <div 

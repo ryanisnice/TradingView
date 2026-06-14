@@ -37,13 +37,30 @@ export const calculateSMA = (data, period = 20) => {
   return sma;
 };
 
+/**
+ * Calculates the shortest distance from point (px, py) to line segment (x1, y1) - (x2, y2).
+ */
+const getDistanceToSegment = (px, py, x1, y1, x2, y2) => {
+  const l2 = (x1 - x2) ** 2 + (y1 - y2) ** 2;
+  if (l2 === 0) return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+  
+  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  
+  const projX = x1 + t * (x2 - x1);
+  const projY = y1 + t * (y2 - y1);
+  
+  return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
+};
+
 export default function Chart({ symbol, timeframe, activeTool, setActiveTool, trendlines, setTrendlines }) {
   const chartContainerRef = useRef(null);
   const hoveredTimeRef = useRef(null);
   
-  // O(1) sliding window sum trackers for MA5 and MA10
+  // O(1) sliding window sum trackers for MA5, MA10, and MA20
   const sma5SumRef = useRef(0);
   const sma10SumRef = useRef(0);
+  const sma20SumRef = useRef(0);
 
   // References to communicate with click & keydown handler closures
   const activeToolRef = useRef(activeTool);
@@ -61,17 +78,67 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Local text markers state (persisted in localStorage)
+  const [textMarkers, setTextMarkers] = useState(() => {
+    const saved = localStorage.getItem('tradingview_text_markers');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse text markers:", e);
+      }
+    }
+    return {};
+  });
+
   // Filter trendlines for the active symbol
   const activeTrendlines = trendlines[symbol] || [];
+
+  const trendlinesRef = useRef(trendlines);
+  const mainSeriesRef = useRef(null);
 
   // Keep refs up-to-date with React states to avoid closure stale-value bugs
   useEffect(() => {
     activeToolRef.current = activeTool;
   }, [activeTool]);
 
+  // Dynamically toggle chart panning/scrolling options based on selected tool
+  useEffect(() => {
+    if (chartRef.current) {
+      const isCursor = activeTool === 'cursor';
+      chartRef.current.applyOptions({
+        handleScale: {
+          mouseWheel: isCursor,
+          pinch: isCursor,
+        },
+        handleScroll: {
+          mouseDrag: isCursor,
+          touchDrag: isCursor,
+        },
+      });
+    }
+  }, [activeTool]);
+
   useEffect(() => {
     drawingPointRef.current = drawingPoint;
   }, [drawingPoint]);
+
+  useEffect(() => {
+    trendlinesRef.current = trendlines;
+  }, [trendlines]);
+
+  useEffect(() => {
+    localStorage.setItem('tradingview_text_markers', JSON.stringify(textMarkers));
+  }, [textMarkers]);
+
+  // Effect to update text markers dynamically without re-initializing the chart
+  useEffect(() => {
+    if (mainSeriesRef.current && typeof mainSeriesRef.current.setMarkers === 'function') {
+      const activeMarkers = textMarkers[symbol] || [];
+      const sortedMarkers = [...activeMarkers].sort((a, b) => a.time - b.time);
+      mainSeriesRef.current.setMarkers(sortedMarkers);
+    }
+  }, [textMarkers, symbol]);
 
   // Effect to draw symbol-bound trendlines dynamically without recreating the chart
   useEffect(() => {
@@ -135,9 +202,10 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
 
         setLoading(false);
 
-        // Calculate double SMA historical data (MA5 & MA10)
+        // Calculate triple SMA historical data (MA5, MA10, and MA20)
         const sma5Data = calculateSMA(candleData, 5);
         const sma10Data = calculateSMA(candleData, 10);
+        const sma20Data = calculateSMA(candleData, 20);
 
         // Initialize O(1) sliding window sum5
         if (candleData.length >= 5) {
@@ -161,11 +229,23 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           sma10SumRef.current = 0;
         }
 
+        // Initialize O(1) sliding window sum20
+        if (candleData.length >= 20) {
+          let sum = 0;
+          for (let j = candleData.length - 20; j < candleData.length; j++) {
+            sum += candleData[j].close;
+          }
+          sma20SumRef.current = sum;
+        } else {
+          sma20SumRef.current = 0;
+        }
+
         // Prepopulate HUD with last data point
         const lastData = candleData[candleData.length - 1];
         const lastVol = volData[volData.length - 1];
         const lastSma5 = sma5Data[sma5Data.length - 1];
         const lastSma10 = sma10Data[sma10Data.length - 1];
+        const lastSma20 = sma20Data[sma20Data.length - 1];
         setHudData({
           open: lastData.open,
           high: lastData.high,
@@ -174,6 +254,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           volume: lastVol ? lastVol.value : 0,
           ma5: lastSma5 ? lastSma5.value : null,
           ma10: lastSma10 ? lastSma10.value : null,
+          ma20: lastSma20 ? lastSma20.value : null,
           isUp: lastData.close >= lastData.open,
         });
 
@@ -228,6 +309,19 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
 
         chartRef.current = chart;
 
+        // Apply scroll/scale settings based on initial active tool state
+        const isCursor = activeToolRef.current === 'cursor';
+        chart.applyOptions({
+          handleScale: {
+            mouseWheel: isCursor,
+            pinch: isCursor,
+          },
+          handleScroll: {
+            mouseDrag: isCursor,
+            touchDrag: isCursor,
+          },
+        });
+
         // Add main series
         let mainSeries;
         if (activeChartType === 'candle') {
@@ -247,6 +341,15 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           mainSeries.setData(candleData.map(d => ({ time: d.time, value: d.close })));
         }
 
+        mainSeriesRef.current = mainSeries;
+
+        // Apply initial text markers
+        const activeMarkers = textMarkers[symbol] || [];
+        const sortedMarkers = [...activeMarkers].sort((a, b) => a.time - b.time);
+        if (mainSeriesRef.current && typeof mainSeriesRef.current.setMarkers === 'function') {
+          mainSeriesRef.current.setMarkers(sortedMarkers);
+        }
+
         // Add MA5 Indicator Line (Blue)
         const ma5Series = chart.addSeries(LineSeries, {
           color: '#2962FF', // Blue
@@ -264,6 +367,15 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           lastValueVisible: true,
         });
         ma10Series.setData(sma10Data);
+
+        // Add MA20 Indicator Line (Bright Yellow)
+        const ma20Series = chart.addSeries(LineSeries, {
+          color: '#F6C343', // Bright Yellow
+          lineWidth: 1.5,
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+        ma20Series.setData(sma20Data);
 
         // Add volume series
         const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -298,7 +410,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
 
         chart.timeScale().fitContent();
 
-        // Subscribe to chart clicks for drawing trendlines
+        // Subscribe to chart clicks for drawing trendlines, text markers, and erasing
         chart.subscribeClick((param) => {
           if (!param.time || !param.point) return;
 
@@ -320,6 +432,60 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
                 };
               });
               setDrawingPoint(null);
+              setActiveTool('cursor');
+            }
+          } else if (currentTool === 'eraser') {
+            const currentList = trendlinesRef.current[symbol] || [];
+            let closestLineIndex = -1;
+            let minDistance = Infinity;
+
+            for (let i = 0; i < currentList.length; i++) {
+              const line = currentList[i];
+              const x1 = chart.timeScale().timeToCoordinate(line.start.time);
+              const y1 = mainSeries.priceToCoordinate(line.start.price);
+              const x2 = chart.timeScale().timeToCoordinate(line.end.time);
+              const y2 = mainSeries.priceToCoordinate(line.end.price);
+
+              if (x1 === null || y1 === null || x2 === null || y2 === null) {
+                continue;
+              }
+
+              const dist = getDistanceToSegment(param.point.x, param.point.y, x1, y1, x2, y2);
+              if (dist < minDistance) {
+                minDistance = dist;
+                closestLineIndex = i;
+              }
+            }
+
+            // Click within 10px tolerance threshold
+            if (closestLineIndex !== -1 && minDistance <= 10) {
+              setTrendlines((prev) => {
+                const currentList = prev[symbol] || [];
+                const newList = currentList.filter((_, idx) => idx !== closestLineIndex);
+                return {
+                  ...prev,
+                  [symbol]: newList,
+                };
+              });
+            }
+          } else if (currentTool === 'text') {
+            const text = window.prompt("請輸入標籤文字 (例如：支撐位、壓力位)：");
+            if (text && text.trim()) {
+              const newMarker = {
+                time: param.time,
+                position: 'aboveBar',
+                color: '#d1d4dc',
+                shape: 'text',
+                text: text.trim(),
+              };
+
+              setTextMarkers((prev) => {
+                const currentList = prev[symbol] || [];
+                return {
+                  ...prev,
+                  [symbol]: [...currentList, newMarker],
+                };
+              });
               setActiveTool('cursor');
             }
           }
@@ -345,6 +511,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             const volVal = param.seriesData.get(volumeSeries);
             const ma5Val = param.seriesData.get(ma5Series);
             const ma10Val = param.seriesData.get(ma10Series);
+            const ma20Val = param.seriesData.get(ma20Series);
             
             if (candleVal) {
               const oVal = candleVal.open !== undefined ? candleVal.open : candleVal.value;
@@ -357,6 +524,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
                 volume: volVal ? volVal.value : 0,
                 ma5: ma5Val ? ma5Val.value : null,
                 ma10: ma10Val ? ma10Val.value : null,
+                ma20: ma20Val ? ma20Val.value : null,
                 isUp: cVal >= oVal,
               });
             }
@@ -375,6 +543,10 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             if (candleData.length >= 10) {
               currentLastSma10 = sma10SumRef.current / 10;
             }
+            let currentLastSma20 = null;
+            if (candleData.length >= 20) {
+              currentLastSma20 = sma20SumRef.current / 20;
+            }
             
             setHudData({
               open: activeLast.open,
@@ -384,6 +556,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
               volume: activeVol ? activeVol.value : 0,
               ma5: currentLastSma5 ? parseFloat(currentLastSma5.toFixed(2)) : null,
               ma10: currentLastSma10 ? parseFloat(currentLastSma10.toFixed(2)) : null,
+              ma20: currentLastSma20 ? parseFloat(currentLastSma20.toFixed(2)) : null,
               isUp: activeLast.close >= activeLast.open,
             });
           }
@@ -435,6 +608,9 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             if (candleData.length >= 10) {
               sma10SumRef.current = sma10SumRef.current - oldClose + c;
             }
+            if (candleData.length >= 20) {
+              sma20SumRef.current = sma20SumRef.current - oldClose + c;
+            }
           } else if (lastCandle) {
             // Creating new tick candle
             o = lastCandle.close; // start open price at previous close price
@@ -460,6 +636,15 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
               let sum = 0;
               for (let j = 0; j < 10; j++) sum += candleData[j].close;
               sma10SumRef.current = sum;
+            }
+
+            if (candleData.length > 20) {
+              const oldest20 = candleData[candleData.length - 21];
+              sma20SumRef.current = sma20SumRef.current - oldest20.close + c;
+            } else if (candleData.length === 20) {
+              let sum = 0;
+              for (let j = 0; j < 20; j++) sum += candleData[j].close;
+              sma20SumRef.current = sum;
             }
           }
 
@@ -491,6 +676,12 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             ma10Series.update({ time: t, value: parseFloat(liveSma10.toFixed(2)) });
           }
 
+          let liveSma20 = null;
+          if (candleData.length >= 20) {
+            liveSma20 = sma20SumRef.current / 20;
+            ma20Series.update({ time: t, value: parseFloat(liveSma20.toFixed(2)) });
+          }
+
           // Update volume reference list
           const existingVolIdx = volData.findIndex(d => d.time === t);
           const newVol = { time: t, value: v, color: isUp ? '#26a69a' : '#ef5350' };
@@ -510,6 +701,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
               volume: v,
               ma5: liveSma5 ? parseFloat(liveSma5.toFixed(2)) : null,
               ma10: liveSma10 ? parseFloat(liveSma10.toFixed(2)) : null,
+              ma20: liveSma20 ? parseFloat(liveSma20.toFixed(2)) : null,
               isUp,
             });
           }
@@ -529,6 +721,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
     return () => {
       isMounted = false;
       chartRef.current = null;
+      mainSeriesRef.current = null;
       if (resizeListener) {
         window.removeEventListener('resize', resizeListener);
       }
@@ -583,6 +776,21 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         </div>
       )}
 
+      {/* Tool Lock Scroll Notification */}
+      {activeTool !== 'cursor' && (
+        <div className={`absolute left-4 z-10 flex flex-col space-y-1 bg-[#ff6d00]/10 border border-[#ff6d00]/30 text-[#ff6d00] px-3 py-1.5 rounded text-[11px] shadow-lg backdrop-blur-md transition-all duration-300 ${
+          drawingPoint ? 'top-[112px]' : 'top-16'
+        }`}>
+          <div className="flex items-center">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#ff6d00] mr-2 animate-pulse" />
+            <span className="font-semibold">繪圖模式已啟用</span>
+          </div>
+          <span className="text-[10px] text-[#ff6d00]/80">
+            圖表已鎖定滑動，請點擊圖表進行操作
+          </span>
+        </div>
+      )}
+
       {/* Chart Toolbar Overlay */}
       <div className="absolute top-3 left-4 z-10 flex items-center space-x-4 bg-tradingview-card/85 backdrop-blur-md px-3 py-1.5 rounded border border-tradingview-border text-xs">
         <div className="flex items-center space-x-1.5">
@@ -628,7 +836,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
               </span>
             </div>
             
-            {/* Double SMAs Display */}
+            {/* Triple SMAs Display */}
             {hudData.ma5 !== null && hudData.ma5 !== undefined && (
               <div className="flex space-x-1">
                 <span className="text-tradingview-textSecondary">MA(5)</span>
@@ -642,6 +850,14 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
                 <span className="text-tradingview-textSecondary">MA(10)</span>
                 <span className="text-[#FF6D00] font-bold">
                   {hudData.ma10.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+            {hudData.ma20 !== null && hudData.ma20 !== undefined && (
+              <div className="flex space-x-1">
+                <span className="text-tradingview-textSecondary">MA(20)</span>
+                <span className="text-[#F6C343] font-bold">
+                  {hudData.ma20.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
             )}
