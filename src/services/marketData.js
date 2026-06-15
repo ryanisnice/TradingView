@@ -1,32 +1,9 @@
 // src/services/marketData.js
 
-import { symbols } from '../mockData';
+import { symbols, generateMockData } from '../mockData';
 import { fetchBinanceKlines, isCryptoSymbol, mapTimeframeToInterval } from '../binanceService';
 
-/**
- * Helper to fetch API requests through a CORS proxy.
- * Tries corsproxy.io -> api.allorigins.win -> api.codetabs.com
- */
-const fetchWithProxy = async (targetUrl) => {
-  try {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-    const res = await fetch(proxyUrl);
-    if (!res.ok) throw new Error("Primary CORS Proxy error");
-    return res;
-  } catch (e) {
-    console.warn("Primary CORS proxy (corsproxy.io) failed, trying allorigins fallback...");
-    try {
-      const fallbackUrl1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-      const res = await fetch(fallbackUrl1);
-      if (!res.ok) throw new Error("Secondary CORS Proxy error");
-      return res;
-    } catch (err) {
-      console.warn("Secondary CORS proxy (allorigins) failed, trying codetabs fallback...");
-      const fallbackUrl2 = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
-      return fetch(fallbackUrl2);
-    }
-  }
-};
+const API_BASE_URL = '/.netlify/functions/yahoo';
 
 // Map local timeframe to Yahoo Finance interval
 export const mapIntervalToYahoo = (timeframe) => {
@@ -49,7 +26,7 @@ export const getYahooRange = (timeframe) => {
 
 /**
  * Fetches historical K-line data for stock or crypto symbols.
- * Stocks: Yahoo Finance API (via CORS Proxy)
+ * Stocks: Yahoo Finance API (via Serverless Function)
  * Cryptos: Binance API
  */
 export const fetchHistoricalKlines = async (symbol, timeframe) => {
@@ -58,11 +35,11 @@ export const fetchHistoricalKlines = async (symbol, timeframe) => {
   if (!isCrypto) {
     const yahooInterval = mapIntervalToYahoo(timeframe);
     const yahooRange = getYahooRange(timeframe);
-    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yahooInterval}&range=${yahooRange}`;
+    const targetUrl = `${API_BASE_URL}?symbol=${symbol}&interval=${yahooInterval}&range=${yahooRange}`;
     
     try {
-      const res = await fetchWithProxy(targetUrl);
-      if (!res.ok) throw new Error(`Yahoo HTTP Status ${res.status}`);
+      const res = await fetch(targetUrl);
+      if (!res.ok) throw new Error(`Yahoo API status ${res.status}`);
       const data = await res.json();
       
       const chartResult = data.chart?.result?.[0];
@@ -107,7 +84,7 @@ export const fetchHistoricalKlines = async (symbol, timeframe) => {
 
 /**
  * Fetches real-time quotes for all symbols in the watchlist.
- * Stocks: Yahoo Finance API v8 Chart Endpoint (via CORS Proxy)
+ * Stocks: Yahoo Finance API v8 Chart Endpoint (via Serverless Function)
  * Cryptos: Binance API Ticker Endpoint (Direct call)
  */
 export const fetchWatchlistQuotes = async (symbolsList) => {
@@ -131,10 +108,10 @@ export const fetchWatchlistQuotes = async (symbolsList) => {
       }
       return item;
     } else {
-      // Fetch stock quotes from Yahoo v8 Chart Endpoint via CORS proxies
-      const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${item.name}?interval=1d&range=1d`;
+      // Fetch stock quotes from Yahoo v8 Chart Endpoint via Serverless Function
+      const targetUrl = `${API_BASE_URL}?symbol=${item.name}&interval=1d&range=1d`;
       try {
-        const res = await fetchWithProxy(targetUrl);
+        const res = await fetch(targetUrl);
         if (res.ok) {
           const json = await res.json();
           const chartResult = json.chart?.result?.[0];
@@ -211,9 +188,9 @@ export const subscribeToRealtime = (symbol, timeframe, onTick) => {
     let currentVolume = 10000;
 
     const fetchQuote = async () => {
-      const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+      const targetUrl = `${API_BASE_URL}?symbol=${symbol}&interval=1d&range=1d`;
       try {
-        const res = await fetchWithProxy(targetUrl);
+        const res = await fetch(targetUrl);
         if (res.ok) {
           const json = await res.json();
           const chartResult = json.chart?.result?.[0];
