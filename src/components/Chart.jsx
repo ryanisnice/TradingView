@@ -171,7 +171,20 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   useEffect(() => {
     if (mainSeriesRef.current && typeof mainSeriesRef.current.setMarkers === 'function') {
       const activeTextMarkers = textMarkers[symbol] || [];
-      const combinedMarkers = [...activeTextMarkers, ...chipsMarkers];
+      const sanitizedChipsMarkers = chipsMarkers.map(m => {
+        let safeShape = 'circle';
+        if (m.shape && m.shape.toLowerCase() === 'arrowup') safeShape = 'arrowUp';
+        else if (m.shape && m.shape.toLowerCase() === 'arrowdown') safeShape = 'arrowDown';
+
+        return {
+          time: m.time,
+          position: m.position === 'aboveBar' ? 'aboveBar' : 'belowBar',
+          color: m.color || '#ef5350',
+          shape: safeShape,
+          size: 2,
+        };
+      });
+      const combinedMarkers = [...activeTextMarkers, ...sanitizedChipsMarkers];
       const sortedMarkers = combinedMarkers.sort((a, b) => a.time - b.time);
       mainSeriesRef.current.setMarkers(sortedMarkers);
     }
@@ -456,7 +469,20 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
 
         // Apply initial text markers and chips strategy markers
         const activeTextMarkers = textMarkers[symbol] || [];
-        const combinedMarkers = [...activeTextMarkers, ...chipsData];
+        const sanitizedChipsMarkers = chipsData.map(m => {
+          let safeShape = 'circle';
+          if (m.shape && m.shape.toLowerCase() === 'arrowup') safeShape = 'arrowUp';
+          else if (m.shape && m.shape.toLowerCase() === 'arrowdown') safeShape = 'arrowDown';
+
+          return {
+            time: m.time,
+            position: m.position === 'aboveBar' ? 'aboveBar' : 'belowBar',
+            color: m.color || '#ef5350',
+            shape: safeShape,
+            size: 2,
+          };
+        });
+        const combinedMarkers = [...activeTextMarkers, ...sanitizedChipsMarkers];
         const sortedMarkers = combinedMarkers.sort((a, b) => a.time - b.time);
         if (mainSeriesRef.current && typeof mainSeriesRef.current.setMarkers === 'function') {
           mainSeriesRef.current.setMarkers(sortedMarkers);
