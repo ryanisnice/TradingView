@@ -126,6 +126,8 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   // Filter trendlines for the active symbol
   const activeTrendlines = trendlines[symbol] || [];
 
+  const isTaiwanStock = symbol && (symbol.endsWith('.TW') || symbol.endsWith('.TWO'));
+
   const trendlinesRef = useRef(trendlines);
   const mainSeriesRef = useRef(null);
 
@@ -1155,11 +1157,11 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         <div ref={chartContainerRef} className="w-full h-full" />
 
         {/* 主力籌碼動能儀表板 (Chip Momentum Dashboard) */}
-        {dashboardData.visible && (
+        {isTaiwanStock && dashboardData.visible && (
           <div 
             style={{
               position: 'absolute',
-              top: '12px',
+              top: '80px',
               left: '12px',
               zIndex: 10,
               backgroundColor: 'rgba(30, 34, 45, 0.85)',
