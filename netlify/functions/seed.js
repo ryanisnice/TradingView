@@ -19,6 +19,8 @@ export const handler = async (event, context) => {
     };
   }
 
+  let supabaseUrl = '';
+
   try {
     const { symbol } = event.queryStringParameters || {};
     const targetSymbol = symbol || '2344.TW';
@@ -36,16 +38,23 @@ export const handler = async (event, context) => {
     const day = String(oneYearAgo.getDate()).padStart(2, '0');
     const startDate = `${year}-${month}-${day}`;
 
-    // 2. Supabase Environment Variables Guard with Trim
-    const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-    const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
-
-    if (!supabaseUrl || !supabaseKey) {
+    // Extreme URL Sanitization
+    supabaseUrl = (process.env.SUPABASE_URL || '').trim().replace(/\s+/g, ''); // 移除所有隱藏空白
+    if (!supabaseUrl.startsWith('http')) {
+        supabaseUrl = 'https://' + supabaseUrl;
+    }
+    supabaseUrl = supabaseUrl.replace('https://https://', 'https://'); // 防止重複 https
+    
+    const supabaseKey = (process.env.SUPABASE_KEY || '').trim().replace(/\s+/g, '');
+    
+    if (!supabaseUrl || supabaseUrl === 'https://' || !supabaseKey) {
       throw new Error('Missing Supabase Environment Variables');
     }
 
-    // Initialize Supabase Client
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+        auth: { persistSession: false }, // 伺服器端無須 session
+        global: { fetch: (...args) => fetch(...args) } // 強制使用原生 fetch，避免套件衝突
+    });
 
     const fetchHeaders = {
       'Accept': 'application/json',
@@ -107,7 +116,7 @@ export const handler = async (event, context) => {
         const cVal = Number(c);
         const vVal = Number(v);
 
-        // Filter out null, undefined, or NaN
+        // Filter out null, undefined, or NaN in loop to save memory
         if (
           timeSec === null || timeSec === undefined || isNaN(timeSec) ||
           o === null || o === undefined || isNaN(oVal) ||
@@ -185,39 +194,46 @@ export const handler = async (event, context) => {
       };
     });
 
+    // Strict Payload Filter
+    const safeKlinesData = klinesData.filter(d => 
+        d.date && !Number.isNaN(d.open) && !Number.isNaN(d.close) && !Number.isNaN(d.volume)
+    );
+
+    const safeChipsData = chipsData.filter(d => 
+        d.date && !Number.isNaN(d.foreign_net) && !Number.isNaN(d.trust_net) && !Number.isNaN(d.dealer_net)
+    );
+
     // 3. Upsert K-lines Data to Supabase
     let klinesUpsertCount = 0;
-    if (klinesData.length > 0) {
+    if (safeKlinesData.length > 0) {
       try {
         const { error: klinesError } = await supabase
           .from('daily_klines')
-          .upsert(klinesData, { onConflict: 'symbol, date' });
+          .upsert(safeKlinesData, { onConflict: 'symbol, date' });
 
         if (klinesError) {
           throw klinesError;
         }
-        klinesUpsertCount = klinesData.length;
+        klinesUpsertCount = safeKlinesData.length;
       } catch (e) {
-        const cause = e.cause ? (e.cause.message || String(e.cause)) : 'Unknown cause';
-        throw new Error(`daily_klines Upsert Failed: ${e.message} | Cause: ${cause}`);
+        throw new Error(`Upsert Failed: ${e.message} | URL Used: [${supabaseUrl}]`);
       }
     }
 
     // 4. Upsert Chips Data to Supabase
     let chipsUpsertCount = 0;
-    if (chipsData.length > 0) {
+    if (safeChipsData.length > 0) {
       try {
         const { error: chipsError } = await supabase
           .from('daily_chips')
-          .upsert(chipsData, { onConflict: 'symbol, date' });
+          .upsert(safeChipsData, { onConflict: 'symbol, date' });
 
         if (chipsError) {
           throw chipsError;
         }
-        chipsUpsertCount = chipsData.length;
+        chipsUpsertCount = safeChipsData.length;
       } catch (e) {
-        const cause = e.cause ? (e.cause.message || String(e.cause)) : 'Unknown cause';
-        throw new Error(`daily_chips Upsert Failed: ${e.message} | Cause: ${cause}`);
+        throw new Error(`Upsert Failed: ${e.message} | URL Used: [${supabaseUrl}]`);
       }
     }
 
