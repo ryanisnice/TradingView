@@ -99,20 +99,34 @@ export const handler = async (event, context) => {
         const h = quote.high[i];
         const l = quote.low[i];
         const c = quote.close[i];
-        const v = quote.volume ? quote.volume[i] || 0 : 0;
+        const v = quote.volume ? quote.volume[i] : 0;
 
-        if (timeSec === null || o === null || h === null || l === null || c === null) {
+        const oVal = Number(o);
+        const hVal = Number(h);
+        const lVal = Number(l);
+        const cVal = Number(c);
+        const vVal = Number(v);
+
+        // Filter out null, undefined, or NaN
+        if (
+          timeSec === null || timeSec === undefined || isNaN(timeSec) ||
+          o === null || o === undefined || isNaN(oVal) ||
+          h === null || h === undefined || isNaN(hVal) ||
+          l === null || l === undefined || isNaN(lVal) ||
+          c === null || c === undefined || isNaN(cVal) ||
+          v === null || v === undefined || isNaN(vVal)
+        ) {
           continue;
         }
 
         klinesData.push({
           symbol: cleanSymbol,
           date: formatDate(timeSec),
-          open: parseFloat(o),
-          high: parseFloat(h),
-          low: parseFloat(l),
-          close: parseFloat(c),
-          volume: parseInt(v)
+          open: oVal,
+          high: hVal,
+          low: lVal,
+          close: cVal,
+          volume: vVal
         });
       }
     }
@@ -158,12 +172,16 @@ export const handler = async (event, context) => {
     });
 
     const chipsData = Object.keys(dailyChips).map((dateStr) => {
+      const foreignNetVal = Number(dailyChips[dateStr].foreign_net) || 0;
+      const trustNetVal = Number(dailyChips[dateStr].trust_net) || 0;
+      const dealerNetVal = Number(dailyChips[dateStr].dealer_net) || 0;
+
       return {
         symbol: cleanSymbol,
         date: dateStr,
-        foreign_net: dailyChips[dateStr].foreign_net,
-        trust_net: dailyChips[dateStr].trust_net,
-        dealer_net: dailyChips[dateStr].dealer_net
+        foreign_net: foreignNetVal,
+        trust_net: trustNetVal,
+        dealer_net: dealerNetVal
       };
     });
 
@@ -180,7 +198,8 @@ export const handler = async (event, context) => {
         }
         klinesUpsertCount = klinesData.length;
       } catch (e) {
-        throw new Error(`Supabase daily_klines Upsert Failed: ${e.message} | URL: ${supabaseUrl}`);
+        const cause = e.cause ? (e.cause.message || String(e.cause)) : 'Unknown cause';
+        throw new Error(`daily_klines Upsert Failed: ${e.message} | Cause: ${cause}`);
       }
     }
 
@@ -197,7 +216,8 @@ export const handler = async (event, context) => {
         }
         chipsUpsertCount = chipsData.length;
       } catch (e) {
-        throw new Error(`Supabase daily_chips Upsert Failed: ${e.message} | URL: ${supabaseUrl}`);
+        const cause = e.cause ? (e.cause.message || String(e.cause)) : 'Unknown cause';
+        throw new Error(`daily_chips Upsert Failed: ${e.message} | Cause: ${cause}`);
       }
     }
 
