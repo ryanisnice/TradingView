@@ -34,45 +34,48 @@ export const handler = async (event, context) => {
     const year = oneYearAgo.getFullYear();
     const month = String(oneYearAgo.getMonth() + 1).padStart(2, '0');
     const day = String(oneYearAgo.getDate()).padStart(2, '0');
-    const start_date = `${year}-${month}-${day}`;
+    const startDate = `${year}-${month}-${day}`;
 
-    // Initialize Supabase Client
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error("Missing Supabase configuration environment variables: SUPABASE_URL or SUPABASE_KEY");
+    // 2. Supabase Environment Variables Guard
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+      throw new Error('Missing Supabase Environment Variables');
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Fetch Yahoo Finance K-line and FinMind institutional buy/sell data in parallel
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(targetSymbol)}?interval=1d&range=1y`;
-    const finmindUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=${encodeURIComponent(cleanSymbol)}&start_date=${start_date}`;
+    // Initialize Supabase Client
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
     const fetchHeaders = {
       'Accept': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     };
 
-    const [yahooRes, finmindRes] = await Promise.all([
-      fetch(yahooUrl, { method: 'GET', headers: fetchHeaders }),
-      fetch(finmindUrl, { method: 'GET', headers: fetchHeaders })
-    ]);
-
-    if (!yahooRes.ok) {
-      throw new Error(`Yahoo Finance API responded with status ${yahooRes.status}`);
+    // 1. Fetch Yahoo K-Lines
+    let yahooData;
+    try {
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(targetSymbol)}?range=1y&interval=1d`;
+      const res = await fetch(yahooUrl, { method: 'GET', headers: fetchHeaders });
+      if (!res.ok) {
+        throw new Error(`HTTP status ${res.status}`);
+      }
+      yahooData = await res.json();
+    } catch (e) {
+      throw new Error('Yahoo Data Fetch Failed: ' + e.message);
     }
-    if (!finmindRes.ok) {
-      throw new Error(`FinMind API responded with status ${finmindRes.status}`);
+
+    // 2. Fetch FinMind Chips
+    let finmindData;
+    try {
+      const finmindUrl = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=${encodeURIComponent(cleanSymbol)}&start_date=${startDate}`;
+      const res = await fetch(finmindUrl, { method: 'GET', headers: fetchHeaders });
+      if (!res.ok) {
+        throw new Error(`HTTP status ${res.status}`);
+      }
+      finmindData = await res.json();
+    } catch (e) {
+      throw new Error('FinMind Data Fetch Failed: ' + e.message);
     }
 
-    const [yahooData, finmindData] = await Promise.all([
-      yahooRes.json(),
-      finmindRes.json()
-    ]);
-
-    // 1. Clean & Transform K-line Data
+    // Transform K-line Data
     const chartResult = yahooData.chart?.result?.[0];
     const timestamps = chartResult?.timestamp || [];
     const quote = chartResult?.indicators?.quote?.[0];
@@ -95,7 +98,6 @@ export const handler = async (event, context) => {
         const c = quote.close[i];
         const v = quote.volume ? quote.volume[i] || 0 : 0;
 
-        // Skip null trading days (market holidays etc.)
         if (timeSec === null || o === null || h === null || l === null || c === null) {
           continue;
         }
@@ -112,7 +114,7 @@ export const handler = async (event, context) => {
       }
     }
 
-    // 2. Clean & Transform Chips Data
+    // Transform Chips Data
     const apiData = finmindData.data || [];
     const dailyChips = {};
     const nameMap = {
@@ -162,30 +164,38 @@ export const handler = async (event, context) => {
       };
     });
 
-    // 3. Write data to Supabase (Upsert to handle conflict)
+    // 3. Upsert K-lines Data to Supabase
     let klinesUpsertCount = 0;
-    let chipsUpsertCount = 0;
-
     if (klinesData.length > 0) {
-      const { error: klinesError } = await supabase
-        .from('daily_klines')
-        .upsert(klinesData, { onConflict: 'symbol, date' });
+      try {
+        const { error: klinesError } = await supabase
+          .from('daily_klines')
+          .upsert(klinesData, { onConflict: 'symbol, date' });
 
-      if (klinesError) {
-        throw new Error(`daily_klines upsert failed: ${klinesError.message}`);
+        if (klinesError) {
+          throw new Error(klinesError.message);
+        }
+        klinesUpsertCount = klinesData.length;
+      } catch (e) {
+        throw new Error('Supabase daily_klines Upsert Failed: ' + e.message);
       }
-      klinesUpsertCount = klinesData.length;
     }
 
+    // 4. Upsert Chips Data to Supabase
+    let chipsUpsertCount = 0;
     if (chipsData.length > 0) {
-      const { error: chipsError } = await supabase
-        .from('daily_chips')
-        .upsert(chipsData, { onConflict: 'symbol, date' });
+      try {
+        const { error: chipsError } = await supabase
+          .from('daily_chips')
+          .upsert(chipsData, { onConflict: 'symbol, date' });
 
-      if (chipsError) {
-        throw new Error(`daily_chips upsert failed: ${chipsError.message}`);
+        if (chipsError) {
+          throw new Error(chipsError.message);
+        }
+        chipsUpsertCount = chipsData.length;
+      } catch (e) {
+        throw new Error('Supabase daily_chips Upsert Failed: ' + e.message);
       }
-      chipsUpsertCount = chipsData.length;
     }
 
     return {
@@ -205,7 +215,7 @@ export const handler = async (event, context) => {
       statusCode: 500,
       headers,
       body: JSON.stringify({
-        error: "Failed to seed database historical records",
+        error: "Seeding Database Failed",
         message: error.message
       })
     };
