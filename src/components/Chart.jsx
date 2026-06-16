@@ -108,6 +108,14 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   const [fibDrawStartPoint, setFibDrawStartPoint] = useState(null);
   const [chipsMarkers, setChipsMarkers] = useState([]);
   const [tooltipData, setTooltipData] = useState(null);
+  const [dashboardData, setDashboardData] = useState({
+    visible: true,
+    fiveDayNet: '+12,500 張',
+    tenDayNet: '+28,000 張',
+    consensus: '外本比同買 (土洋共識)',
+    hint: '🔥 強勢：投信連續買進，籌碼安定度極高！',
+    trend: 'up' // 'up' 代表偏多(紅色), 'down' 代表偏空(綠色)
+  });
   const [chartLoadedToggle, setChartLoadedToggle] = useState(false);
 
   // References to draw price lines and communicate with closures
@@ -1145,6 +1153,54 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
       {/* Chart container wrapper */}
       <div className="relative flex-1 w-full min-h-0">
         <div ref={chartContainerRef} className="w-full h-full" />
+
+        {/* 主力籌碼動能儀表板 (Chip Momentum Dashboard) */}
+        {dashboardData.visible && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: '12px',
+              left: '12px',
+              zIndex: 10,
+              backgroundColor: 'rgba(30, 34, 45, 0.85)',
+              backdropFilter: 'blur(6px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              color: '#D1D4DC',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+              fontSize: '13px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+              minWidth: '280px',
+              pointerEvents: 'none' // 讓滑鼠點擊可以穿透面板，不影響操作 K 線
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '8px' }}>
+              <span style={{ fontWeight: 'bold', color: '#FFFFFF' }}>主力籌碼動能</span>
+              <span style={{ color: dashboardData.trend === 'up' ? '#ef5350' : '#26a69a', fontWeight: 'bold' }}>
+                {dashboardData.trend === 'up' ? '多頭排列' : '空頭警戒'}
+              </span>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#8A919E' }}>近 5 日累積：</span>
+                <span style={{ color: dashboardData.fiveDayNet.includes('+') ? '#ef5350' : '#26a69a', fontWeight: '500' }}>{dashboardData.fiveDayNet}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#8A919E' }}>近 10 日累積：</span>
+                <span style={{ color: dashboardData.tenDayNet.includes('+') ? '#ef5350' : '#26a69a', fontWeight: '500' }}>{dashboardData.tenDayNet}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#8A919E' }}>土洋動向：</span>
+                <span style={{ color: '#FFD700', fontWeight: '500' }}>{dashboardData.consensus}</span>
+              </div>
+              <div style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)', color: '#FFFFFF', fontSize: '12px', lineHeight: '1.4' }}>
+                {dashboardData.hint}
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Tooltip Overlay */}
         {tooltipData && (
