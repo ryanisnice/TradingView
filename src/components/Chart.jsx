@@ -475,11 +475,20 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           },
           priceScaleId: 'left',
         });
-        volumeSeries.setData(volData);
+        
+        // Map volume colors to 0.2 opacity background colors
+        const adjustedVolData = volData.map((d) => ({
+          ...d,
+          color: d.color === '#26a69a' || d.color === 'rgba(38, 166, 154, 0.8)'
+            ? 'rgba(38, 166, 154, 0.2)'
+            : 'rgba(239, 83, 80, 0.2)'
+        }));
+        volumeSeries.setData(adjustedVolData);
+        
         volumeSeries.priceScale().applyOptions({
           scaleMargins: {
             top: 0.75,
-            bottom: 0.15,
+            bottom: 0,
           },
         });
 
@@ -510,7 +519,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         chipsSeries.setData(coloredChips);
         chipsSeries.priceScale().applyOptions({
           scaleMargins: {
-            top: 0.85,
+            top: 0.75,
             bottom: 0,
           },
         });
@@ -855,7 +864,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           volumeSeries.update({
             time: t,
             value: v,
-            color: isUp ? '#26a69a' : '#ef5350',
+            color: isUp ? 'rgba(38, 166, 154, 0.2)' : 'rgba(239, 83, 80, 0.2)',
           });
 
           // Calculate live SMA values
