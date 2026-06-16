@@ -143,6 +143,7 @@ export const handler = async (event, context) => {
       if (buyTriggers.length > 0) {
         markers.push({
           time: unixTime,
+          date: dateStr,
           position: 'belowBar',
           color: '#ef5350',
           shape: 'arrowUp',
@@ -154,6 +155,7 @@ export const handler = async (event, context) => {
       if (sellTriggers.length > 0) {
         markers.push({
           time: unixTime,
+          date: dateStr,
           position: 'aboveBar',
           color: '#26a69a',
           shape: 'arrowDown',

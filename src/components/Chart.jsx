@@ -284,7 +284,24 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
 
         candleData = result.candlestick;
         volData = result.volume;
-        chipsData = chipsResult;
+
+        // 利用後端傳來的 YYYY-MM-DD，去尋找完全對應的那根 K 線，並把 marker 的 time 替換成那根 K 線的 time
+        chipsData = chipsResult.map(marker => {
+          if (marker.date) {
+            const matchingCandle = candleData.find(c => {
+              // 將 Yahoo 的 unix time 轉回 YYYY-MM-DD
+              const d = new Date(c.time * 1000);
+              const y = d.getUTCFullYear();
+              const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+              const day = String(d.getUTCDate()).padStart(2, '0');
+              return `${y}-${m}-${day}` === marker.date;
+            });
+            if (matchingCandle) {
+              return { ...marker, time: matchingCandle.time };
+            }
+          }
+          return marker;
+        }).filter(m => m.time && candleData.some(c => c.time === m.time)); // 過濾掉 K 線圖上沒有的日期
 
         if (!isMounted) return;
 
