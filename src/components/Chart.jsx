@@ -171,22 +171,29 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   useEffect(() => {
     if (mainSeriesRef.current && typeof mainSeriesRef.current.setMarkers === 'function') {
       const activeTextMarkers = textMarkers[symbol] || [];
-      const sanitizedChipsMarkers = chipsMarkers.map(m => {
-        let safeShape = 'circle';
-        if (m.shape && m.shape.toLowerCase() === 'arrowup') safeShape = 'arrowUp';
-        else if (m.shape && m.shape.toLowerCase() === 'arrowdown') safeShape = 'arrowDown';
 
+      // 強制轉換籌碼訊號，確保屬性 100% 吻合 lightweight-charts 規範，並加上超明顯的文字與最大尺寸
+      const sanitizedChipsMarkers = chipsMarkers.map((m) => {
+        // 利用 position 來反推買賣，最為防呆安全
+        const isSell = m.position === 'aboveBar'; 
         return {
           time: m.time,
-          position: m.position === 'aboveBar' ? 'aboveBar' : 'belowBar',
-          color: m.color || '#ef5350',
-          shape: safeShape,
-          size: 2,
+          position: isSell ? 'aboveBar' : 'belowBar',
+          color: isSell ? '#26a69a' : '#ef5350', // 綠色賣出，紅色買進
+          shape: isSell ? 'arrowDown' : 'arrowUp', // 強制賦予正確的形狀字串
+          size: 3, // lightweight-charts 的最大 size
+          text: isSell ? '賣' : '買', // 直接在箭頭旁加上文字，讓訊號更直觀明顯
         };
       });
+
       const combinedMarkers = [...activeTextMarkers, ...sanitizedChipsMarkers];
       const sortedMarkers = combinedMarkers.sort((a, b) => a.time - b.time);
-      mainSeriesRef.current.setMarkers(sortedMarkers);
+      
+      try {
+        mainSeriesRef.current.setMarkers(sortedMarkers);
+      } catch (e) {
+        console.error("Failed to set markers:", e);
+      }
     }
   }, [textMarkers, chipsMarkers, symbol]);
 
