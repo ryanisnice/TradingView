@@ -234,3 +234,22 @@ export const subscribeToRealtime = (symbol, timeframe, onTick) => {
     };
   }
 };
+
+/**
+ * Fetches institutional investors buy/sell chips data for Taiwan Stock symbols.
+ * Returns an array of { time: unix_timestamp, value: net_shares }
+ */
+export const fetchInstitutionalChips = async (symbol) => {
+  const isCrypto = isCryptoSymbol(symbol);
+  if (isCrypto) return [];
+
+  try {
+    const res = await fetch(`/.netlify/functions/chips?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) throw new Error(`Chips API responded with status ${res.status}`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.warn("Failed to fetch institutional investor chips:", e);
+    return [];
+  }
+};

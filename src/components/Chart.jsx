@@ -6,7 +6,7 @@ import {
   HistogramSeries,
   LineStyle
 } from 'lightweight-charts';
-import { fetchHistoricalKlines, subscribeToRealtime } from '../services/marketData';
+import { fetchHistoricalKlines, subscribeToRealtime, fetchInstitutionalChips } from '../services/marketData';
 
 /**
  * Calculates Simple Moving Average (SMA) for K-line data.
@@ -271,11 +271,17 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
       try {
         let candleData = [];
         let volData = [];
+        let chipsData = [];
 
-        // Load historical time series data from abstract Market Data service
-        const result = await fetchHistoricalKlines(symbol, timeframe);
+        // Parallel load of historical klines and institutional chips data
+        const [result, chipsResult] = await Promise.all([
+          fetchHistoricalKlines(symbol, timeframe),
+          fetchInstitutionalChips(symbol)
+        ]);
+
         candleData = result.candlestick;
         volData = result.volume;
+        chipsData = chipsResult;
 
         if (!isMounted) return;
 
@@ -473,6 +479,29 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         volumeSeries.priceScale().applyOptions({
           scaleMargins: {
             top: 0.8,
+            bottom: 0,
+          },
+        });
+
+        // Add Institutional Investors Chips series (Taiwan Stocks)
+        const chipsSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: {
+            type: 'volume',
+          },
+          priceScaleId: 'chips',
+        });
+
+        // Map colors for chips (buy/positive -> Red, sell/negative -> Green)
+        const coloredChips = chipsData.map((d) => ({
+          time: d.time,
+          value: d.value,
+          color: d.value > 0 ? 'rgba(239, 83, 80, 0.8)' : 'rgba(38, 166, 154, 0.8)'
+        }));
+
+        chipsSeries.setData(coloredChips);
+        chipsSeries.priceScale().applyOptions({
+          scaleMargins: {
+            top: 0.85,
             bottom: 0,
           },
         });
