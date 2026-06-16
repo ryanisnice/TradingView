@@ -3,7 +3,8 @@ import {
   createChart, 
   CandlestickSeries, 
   LineSeries, 
-  HistogramSeries 
+  HistogramSeries,
+  LineStyle
 } from 'lightweight-charts';
 import { fetchHistoricalKlines, subscribeToRealtime } from '../services/marketData';
 
@@ -91,6 +92,27 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
     return {};
   });
 
+  // Local Fibonacci drawings state (persisted in localStorage)
+  const [fibonacciDrawings, setFibonacciDrawings] = useState(() => {
+    const saved = localStorage.getItem('tradingview_fibonacci_drawings');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse fibonacci drawings:", e);
+      }
+    }
+    return {};
+  });
+
+  const [fibDrawStartPoint, setFibDrawStartPoint] = useState(null);
+  const [chartLoadedToggle, setChartLoadedToggle] = useState(false);
+
+  // References to draw price lines and communicate with closures
+  const fibPriceLinesRef = useRef([]);
+  const fibDrawStartPointRef = useRef(null);
+  const fibonacciDrawingsRef = useRef(fibonacciDrawings);
+
   // Filter trendlines for the active symbol
   const activeTrendlines = trendlines[symbol] || [];
 
@@ -128,8 +150,20 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   }, [trendlines]);
 
   useEffect(() => {
+    fibDrawStartPointRef.current = fibDrawStartPoint;
+  }, [fibDrawStartPoint]);
+
+  useEffect(() => {
+    fibonacciDrawingsRef.current = fibonacciDrawings;
+  }, [fibonacciDrawings]);
+
+  useEffect(() => {
     localStorage.setItem('tradingview_text_markers', JSON.stringify(textMarkers));
   }, [textMarkers]);
+
+  useEffect(() => {
+    localStorage.setItem('tradingview_fibonacci_drawings', JSON.stringify(fibonacciDrawings));
+  }, [fibonacciDrawings]);
 
   // Effect to update text markers dynamically without re-initializing the chart
   useEffect(() => {
@@ -139,6 +173,56 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
       mainSeriesRef.current.setMarkers(sortedMarkers);
     }
   }, [textMarkers, symbol]);
+
+  // Effect to render Fibonacci PriceLines on active series
+  useEffect(() => {
+    const mainSeries = mainSeriesRef.current;
+    if (!mainSeries) return;
+
+    // 1. Clear old price lines
+    fibPriceLinesRef.current.forEach((line) => {
+      try {
+        mainSeries.removePriceLine(line);
+      } catch (e) {
+        // Line already removed
+      }
+    });
+    fibPriceLinesRef.current = [];
+
+    // 2. Draw current symbol's Fibonacci price lines
+    const activeFibs = fibonacciDrawings[symbol] || [];
+    
+    // level styles (0%, 23.6%, 38.2%, 50.0%, 61.8%, 100%)
+    const levelStyles = {
+      '0.0': { color: '#ef5350', title: '0.0% (End)' },
+      '0.236': { color: '#ff9800', title: '23.6%' },
+      '0.382': { color: '#f6c343', title: '38.2%' },
+      '0.5': { color: '#26a69a', title: '50.0%' },
+      '0.618': { color: '#d4af37', title: '61.8% (Gold)' }, // Golden Ratio
+      '1.0': { color: '#29b6f6', title: '100.0% (Start)' }
+    };
+
+    activeFibs.forEach((fib) => {
+      Object.keys(fib.levels).forEach((level) => {
+        const price = fib.levels[level];
+        const style = levelStyles[level] || { color: '#787b86', title: `${level}` };
+
+        try {
+          const priceLine = mainSeries.createPriceLine({
+            price: price,
+            color: style.color,
+            lineWidth: 1.5,
+            lineStyle: LineStyle.Dashed,
+            title: style.title,
+            axisLabelVisible: true,
+          });
+          fibPriceLinesRef.current.push(priceLine);
+        } catch (e) {
+          console.error("Failed to create Fibonacci PriceLine:", level, e);
+        }
+      });
+    });
+  }, [fibonacciDrawings, symbol, chartLoadedToggle]);
 
   // Effect to draw symbol-bound trendlines dynamically without recreating the chart
   useEffect(() => {
@@ -342,6 +426,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         }
 
         mainSeriesRef.current = mainSeries;
+        setChartLoadedToggle(prev => !prev);
 
         // Apply initial text markers
         const activeMarkers = textMarkers[symbol] || [];
@@ -434,7 +519,48 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
               setDrawingPoint(null);
               setActiveTool('cursor');
             }
+          } else if (currentTool === 'fibonacci') {
+            const price = mainSeries.coordinateToPrice(param.point.y);
+            const time = param.time;
+            const startPoint = fibDrawStartPointRef.current;
+
+            if (!startPoint) {
+              setFibDrawStartPoint({ time, price });
+            } else {
+              const endPoint = { time, price };
+              const startPrice = startPoint.price;
+              const endPrice = price;
+              const diff = startPrice - endPrice;
+
+              const levels = {
+                '0.0': endPrice,
+                '0.236': endPrice + diff * 0.236,
+                '0.382': endPrice + diff * 0.382,
+                '0.5': endPrice + diff * 0.5,
+                '0.618': endPrice + diff * 0.618,
+                '1.0': startPrice
+              };
+
+              const newFib = {
+                id: `fib_${Date.now()}`,
+                start: startPoint,
+                end: endPoint,
+                levels
+              };
+
+              setFibonacciDrawings((prev) => {
+                const currentList = prev[symbol] || [];
+                return {
+                  ...prev,
+                  [symbol]: [...currentList, newFib]
+                };
+              });
+
+              setFibDrawStartPoint(null);
+              setActiveTool('cursor');
+            }
           } else if (currentTool === 'eraser') {
+            // Check trendlines for deletion
             const currentList = trendlinesRef.current[symbol] || [];
             let closestLineIndex = -1;
             let minDistance = Infinity;
@@ -457,11 +583,39 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
               }
             }
 
-            // Click within 10px tolerance threshold
-            if (closestLineIndex !== -1 && minDistance <= 10) {
+            // Check Fibonacci drawings for deletion
+            const currentFibs = fibonacciDrawingsRef.current[symbol] || [];
+            let closestFibId = null;
+            let minFibDistance = Infinity;
+
+            currentFibs.forEach((fib) => {
+              Object.keys(fib.levels).forEach((levelKey) => {
+                const levelPrice = fib.levels[levelKey];
+                const levelY = mainSeries.priceToCoordinate(levelPrice);
+                if (levelY !== null) {
+                  const dist = Math.abs(param.point.y - levelY);
+                  if (dist < minFibDistance) {
+                    minFibDistance = dist;
+                    closestFibId = fib.id;
+                  }
+                }
+              });
+            });
+
+            // Delete visually closer item within 10px tolerance threshold
+            if (closestLineIndex !== -1 && minDistance <= 10 && minDistance <= minFibDistance) {
               setTrendlines((prev) => {
                 const currentList = prev[symbol] || [];
                 const newList = currentList.filter((_, idx) => idx !== closestLineIndex);
+                return {
+                  ...prev,
+                  [symbol]: newList,
+                };
+              });
+            } else if (closestFibId !== null && minFibDistance <= 10) {
+              setFibonacciDrawings((prev) => {
+                const currentList = prev[symbol] || [];
+                const newList = currentList.filter((fib) => fib.id !== closestFibId);
                 return {
                   ...prev,
                   [symbol]: newList,
@@ -496,6 +650,9 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           if (e.key === 'Escape') {
             if (drawingPointRef.current) {
               setDrawingPoint(null);
+            }
+            if (fibDrawStartPointRef.current) {
+              setFibDrawStartPoint(null);
             }
             setActiveTool('cursor');
           }
@@ -776,10 +933,18 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         </div>
       )}
 
+      {/* Drawing Fibonacci UI Notification Prompt */}
+      {fibDrawStartPoint && (
+        <div className="absolute top-16 left-4 z-10 flex items-center bg-[#f6c343]/10 border border-[#f6c343]/30 text-[#f6c343] px-3 py-1.5 rounded text-[11px] animate-pulse shadow-lg backdrop-blur-md">
+          <span className="w-2 h-2 rounded-full bg-[#f6c343] mr-2" />
+          <span>起點已設定！請在圖表上點擊第二點以計算黃金比例回撤線 (按 ESC 鍵取消)</span>
+        </div>
+      )}
+
       {/* Tool Lock Scroll Notification */}
       {activeTool !== 'cursor' && (
         <div className={`absolute left-4 z-10 flex flex-col space-y-1 bg-[#ff6d00]/10 border border-[#ff6d00]/30 text-[#ff6d00] px-3 py-1.5 rounded text-[11px] shadow-lg backdrop-blur-md transition-all duration-300 ${
-          drawingPoint ? 'top-[112px]' : 'top-16'
+          (drawingPoint || fibDrawStartPoint) ? 'top-[112px]' : 'top-16'
         }`}>
           <div className="flex items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-[#ff6d00] mr-2 animate-pulse" />
