@@ -236,8 +236,8 @@ export const subscribeToRealtime = (symbol, timeframe, onTick) => {
 };
 
 /**
- * Fetches institutional investors buy/sell chips data for Taiwan Stock symbols.
- * Returns an array of { time: unix_timestamp, value: net_shares }
+ * Fetches institutional investors trading strategy markers for Taiwan Stock symbols.
+ * Returns an array of marker objects: { time, position, color, shape, text, size }
  */
 export const fetchInstitutionalChips = async (symbol) => {
   const isCrypto = isCryptoSymbol(symbol);

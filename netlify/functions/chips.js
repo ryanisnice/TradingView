@@ -60,51 +60,125 @@ export const handler = async (event, context) => {
     const json = await response.json();
     const apiData = json.data || [];
 
-    // Aggregate daily buy and sell totals across all institutional investors
-    const dailyNet = {};
+    // Group institutional buy/sell records by date
+    const dailyGroups = {};
+    const nameMap = {
+      'Investment_Trust': 'trust',
+      '投信': 'trust',
+      'Foreign_Investor': 'foreign',
+      '外資及陸資': 'foreign',
+      '外資及陸資(不含外資自營商)': 'foreign',
+      'Dealer_self': 'dealer',
+      '自營商': 'dealer',
+      '自營商(自行買賣)': 'dealer',
+      'Dealer_Hedging': 'dealer',
+      '自營商(避險)': 'dealer'
+    };
+
     apiData.forEach((item) => {
       const dateStr = item.date;
       if (!dateStr) return;
 
-      const buy = parseFloat(item.buy) || 0;
-      const sell = parseFloat(item.sell) || 0;
-      const net = buy - sell;
+      const mappedName = nameMap[item.name];
+      if (mappedName) {
+        const buy = parseFloat(item.buy) || 0;
+        const sell = parseFloat(item.sell) || 0;
+        const net = buy - sell;
 
-      if (dailyNet[dateStr] === undefined) {
-        dailyNet[dateStr] = 0;
+        if (!dailyGroups[dateStr]) {
+          dailyGroups[dateStr] = { trust: 0, foreign: 0, dealer: 0 };
+        }
+        dailyGroups[dateStr][mappedName] += net;
       }
-      dailyNet[dateStr] += net;
     });
 
-    // Format output as array of { time: unix_timestamp_seconds, value: net_shares }
-    const result = Object.keys(dailyNet).map((dateStr) => {
+    // Sort dates chronologically ascending
+    const sortedDates = Object.keys(dailyGroups).sort();
+
+    // Track consecutive buy days and yesterday's net buy/sell statuses
+    const consecutiveBuy = { trust: 0, foreign: 0, dealer: 0 };
+    const prevNet = { trust: 0, foreign: 0, dealer: 0 };
+    const threshold = 5000000; // 5000 sheets * 1000 shares/sheet = 5,000,000 shares
+
+    const groupNames = {
+      trust: '投信',
+      foreign: '外資',
+      dealer: '自營商'
+    };
+
+    const markers = [];
+
+    sortedDates.forEach((dateStr) => {
       const parts = dateStr.split('-');
-      // Use UTC to prevent local timezone shifts in lightweight-charts
-      const time = Math.floor(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])) / 1000);
-      return {
-        time,
-        value: dailyNet[dateStr]
-      };
+      const unixTime = Math.floor(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])) / 1000);
+
+      const buyTriggers = [];
+      const sellTriggers = [];
+
+      for (const group of ['trust', 'foreign', 'dealer']) {
+        const netShares = dailyGroups[dateStr][group] || 0;
+
+        // Condition B (Sell Signal): transition from net buy yesterday (> 0) to net sell today (< 0)
+        if (prevNet[group] > 0 && netShares < 0) {
+          sellTriggers.push(`${groupNames[group]}轉買為賣`);
+        }
+
+        // Update consecutive buying days
+        if (netShares > 0) {
+          consecutiveBuy[group] += 1;
+        } else {
+          consecutiveBuy[group] = 0;
+        }
+
+        // Condition A (Buy Signal): consecutive buys >= 3 and today's buy volume > 5,000,000 shares
+        if (consecutiveBuy[group] >= 3 && netShares > threshold) {
+          buyTriggers.push(`${groupNames[group]}連買${consecutiveBuy[group]}天且爆量`);
+        }
+
+        // Save net shares for tomorrow
+        prevNet[group] = netShares;
+      }
+
+      // Merge signals per date to avoid overlapping markers
+      if (buyTriggers.length > 0) {
+        markers.push({
+          time: unixTime,
+          position: 'belowBar',
+          color: '#ef5350',
+          shape: 'arrowUp',
+          text: `[買進訊號] ${buyTriggers.join(', ')}`,
+          size: 2
+        });
+      }
+
+      if (sellTriggers.length > 0) {
+        markers.push({
+          time: unixTime,
+          position: 'aboveBar',
+          color: '#26a69a',
+          shape: 'arrowDown',
+          text: `[賣出訊號] ${sellTriggers.join(', ')}`,
+          size: 2
+        });
+      }
     });
 
-    // Sort results chronologically ascending (required by lightweight-charts)
-    result.sort((a, b) => a.time - b.time);
+    // Sort markers chronologically
+    markers.sort((a, b) => a.time - b.time);
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify(result)
+      body: JSON.stringify(markers)
     };
 
   } catch (error) {
     console.error("FinMind Chips API Serverless Function Error:", error);
+    // Fall back to empty array on API failure
     return {
-      statusCode: 500,
+      statusCode: 200,
       headers,
-      body: JSON.stringify({
-        error: "Failed to fetch chips data from FinMind API",
-        message: error.message
-      })
+      body: JSON.stringify([])
     };
   }
 };

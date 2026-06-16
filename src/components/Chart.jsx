@@ -106,6 +106,8 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
   });
 
   const [fibDrawStartPoint, setFibDrawStartPoint] = useState(null);
+  const [chipsMarkers, setChipsMarkers] = useState([]);
+  const [tooltipData, setTooltipData] = useState(null);
   const [chartLoadedToggle, setChartLoadedToggle] = useState(false);
 
   // References to draw price lines and communicate with closures
@@ -165,14 +167,15 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
     localStorage.setItem('tradingview_fibonacci_drawings', JSON.stringify(fibonacciDrawings));
   }, [fibonacciDrawings]);
 
-  // Effect to update text markers dynamically without re-initializing the chart
+  // Effect to update markers dynamically (both user text markers and strategy chips markers)
   useEffect(() => {
     if (mainSeriesRef.current && typeof mainSeriesRef.current.setMarkers === 'function') {
-      const activeMarkers = textMarkers[symbol] || [];
-      const sortedMarkers = [...activeMarkers].sort((a, b) => a.time - b.time);
+      const activeTextMarkers = textMarkers[symbol] || [];
+      const combinedMarkers = [...activeTextMarkers, ...chipsMarkers];
+      const sortedMarkers = combinedMarkers.sort((a, b) => a.time - b.time);
       mainSeriesRef.current.setMarkers(sortedMarkers);
     }
-  }, [textMarkers, symbol]);
+  }, [textMarkers, chipsMarkers, symbol]);
 
   // Effect to render Fibonacci PriceLines on active series
   useEffect(() => {
@@ -434,12 +437,14 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         mainSeriesRef.current = mainSeries;
         setChartLoadedToggle(prev => !prev);
 
-        // Apply initial text markers
-        const activeMarkers = textMarkers[symbol] || [];
-        const sortedMarkers = [...activeMarkers].sort((a, b) => a.time - b.time);
+        // Apply initial text markers and chips strategy markers
+        const activeTextMarkers = textMarkers[symbol] || [];
+        const combinedMarkers = [...activeTextMarkers, ...chipsData];
+        const sortedMarkers = combinedMarkers.sort((a, b) => a.time - b.time);
         if (mainSeriesRef.current && typeof mainSeriesRef.current.setMarkers === 'function') {
           mainSeriesRef.current.setMarkers(sortedMarkers);
         }
+        setChipsMarkers(chipsData);
 
         // Add MA5 Indicator Line (Blue)
         const ma5Series = chart.addSeries(LineSeries, {
@@ -487,42 +492,12 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         
         volumeSeries.priceScale().applyOptions({
           scaleMargins: {
-            top: 0.75,
+            top: 0.8,
             bottom: 0,
           },
         });
 
-        // Add Institutional Investors Chips series (Taiwan Stocks)
-        const chipsSeries = chart.addSeries(HistogramSeries, {
-          priceFormat: {
-            type: 'volume',
-          },
-          priceScaleId: 'chips',
-        });
-
-        // Create zero baseline for buy/sell chips
-        chipsSeries.createPriceLine({
-          price: 0,
-          color: '#787b86',
-          lineWidth: 1,
-          lineStyle: 2, // Dotted
-          title: '',
-        });
-
-        // Map colors for chips (buy/positive -> Red, sell/negative -> Green) with 0.6 opacity
-        const coloredChips = chipsData.map((d) => ({
-          time: d.time,
-          value: d.value,
-          color: d.value > 0 ? 'rgba(239, 83, 80, 0.6)' : 'rgba(38, 166, 154, 0.6)'
-        }));
-
-        chipsSeries.setData(coloredChips);
-        chipsSeries.priceScale().applyOptions({
-          scaleMargins: {
-            top: 0.75,
-            bottom: 0,
-          },
-        });
+        // Chips strategy markers are rendered directly as markers on the main series
 
         // Draw already existing trendlines for current symbol on startup
         trendlineSeriesListRef.current = [];
@@ -707,10 +682,23 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         window.addEventListener('keydown', handleKeyDown);
         keydownListener = handleKeyDown;
 
-        // Subscribe to crosshair moves for HUD values
+        // Subscribe to crosshair moves for HUD values and Tooltip updates
         chart.subscribeCrosshairMove((param) => {
           if (param.time) {
             hoveredTimeRef.current = param.time;
+            
+            // Check for strategy markers on this timestamp to update tooltip
+            const matchedMarker = chipsData.find(m => m.time === param.time);
+            if (matchedMarker && param.point) {
+              setTooltipData({
+                text: matchedMarker.text,
+                x: param.point.x,
+                y: param.point.y
+              });
+            } else {
+              setTooltipData(null);
+            }
+
             const candleVal = param.seriesData.get(mainSeries);
             const volVal = param.seriesData.get(volumeSeries);
             const ma5Val = param.seriesData.get(ma5Series);
@@ -734,6 +722,7 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
             }
           } else {
             hoveredTimeRef.current = null;
+            setTooltipData(null);
             // Back to displaying the latest live data point
             const activeLast = candleData[candleData.length - 1];
             const activeVol = volData[volData.length - 1];
@@ -1103,8 +1092,23 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         </div>
       </div>
 
-      {/* Chart container */}
-      <div ref={chartContainerRef} className="flex-1 w-full" />
+      {/* Chart container wrapper */}
+      <div className="relative flex-1 w-full min-h-0">
+        <div ref={chartContainerRef} className="w-full h-full" />
+        
+        {/* Tooltip Overlay */}
+        {tooltipData && (
+          <div
+            className="absolute z-50 pointer-events-none bg-[#1c2030]/95 border border-[#2a2e39] text-[#d1d4dc] text-xs px-2.5 py-1.5 rounded shadow-xl max-w-xs transition-opacity duration-150"
+            style={{
+              left: `${tooltipData.x + 15}px`,
+              top: `${tooltipData.y + 15}px`
+            }}
+          >
+            {tooltipData.text}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
