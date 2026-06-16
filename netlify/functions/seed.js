@@ -36,13 +36,16 @@ export const handler = async (event, context) => {
     const day = String(oneYearAgo.getDate()).padStart(2, '0');
     const startDate = `${year}-${month}-${day}`;
 
-    // 2. Supabase Environment Variables Guard
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    // 2. Supabase Environment Variables Guard with Trim
+    const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
+    const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
+
+    if (!supabaseUrl || !supabaseKey) {
       throw new Error('Missing Supabase Environment Variables');
     }
 
     // Initialize Supabase Client
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const fetchHeaders = {
       'Accept': 'application/json',
@@ -173,11 +176,11 @@ export const handler = async (event, context) => {
           .upsert(klinesData, { onConflict: 'symbol, date' });
 
         if (klinesError) {
-          throw new Error(klinesError.message);
+          throw klinesError;
         }
         klinesUpsertCount = klinesData.length;
       } catch (e) {
-        throw new Error('Supabase daily_klines Upsert Failed: ' + e.message);
+        throw new Error(`Supabase daily_klines Upsert Failed: ${e.message} | URL: ${supabaseUrl}`);
       }
     }
 
@@ -190,11 +193,11 @@ export const handler = async (event, context) => {
           .upsert(chipsData, { onConflict: 'symbol, date' });
 
         if (chipsError) {
-          throw new Error(chipsError.message);
+          throw chipsError;
         }
         chipsUpsertCount = chipsData.length;
       } catch (e) {
-        throw new Error('Supabase daily_chips Upsert Failed: ' + e.message);
+        throw new Error(`Supabase daily_chips Upsert Failed: ${e.message} | URL: ${supabaseUrl}`);
       }
     }
 
