@@ -478,8 +478,8 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
         volumeSeries.setData(volData);
         volumeSeries.priceScale().applyOptions({
           scaleMargins: {
-            top: 0.8,
-            bottom: 0,
+            top: 0.75,
+            bottom: 0.15,
           },
         });
 
@@ -491,11 +491,20 @@ export default function Chart({ symbol, timeframe, activeTool, setActiveTool, tr
           priceScaleId: 'chips',
         });
 
-        // Map colors for chips (buy/positive -> Red, sell/negative -> Green)
+        // Create zero baseline for buy/sell chips
+        chipsSeries.createPriceLine({
+          price: 0,
+          color: '#787b86',
+          lineWidth: 1,
+          lineStyle: 2, // Dotted
+          title: '',
+        });
+
+        // Map colors for chips (buy/positive -> Red, sell/negative -> Green) with 0.6 opacity
         const coloredChips = chipsData.map((d) => ({
           time: d.time,
           value: d.value,
-          color: d.value > 0 ? 'rgba(239, 83, 80, 0.8)' : 'rgba(38, 166, 154, 0.8)'
+          color: d.value > 0 ? 'rgba(239, 83, 80, 0.6)' : 'rgba(38, 166, 154, 0.6)'
         }));
 
         chipsSeries.setData(coloredChips);
